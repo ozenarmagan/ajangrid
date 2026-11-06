@@ -1,4 +1,4 @@
-name: Kurulum dosyalarını üret
+name: Kurulum dosyalarını üret (dmg + exe)
 
 # main'e her push'ta package.json'daki sürüm (vX.Y.Z) için kurulum dosyaları
 # üretilir ve aynı adlı GitHub sürümüne eklenir (yoksa oluşturulur).
