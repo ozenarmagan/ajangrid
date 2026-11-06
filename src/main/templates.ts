@@ -108,7 +108,8 @@ export function applyTemplate(
     }),
     agent({
       name: 'Seslendirmen',
-      title: 'Seslendirme metnini yerel TTS modeliyle sese çevirir (görev = seslendirilecek metin)',
+      title:
+        'Seslendirme metnini yerel TTS modeliyle sese çevirir. Görev: seslendirilecek dosyanın adı (ör. seslendirme.txt), çıktı outputs/ses.wav',
       role: '',
       isManager: false,
       color: '#6ee7b7',
