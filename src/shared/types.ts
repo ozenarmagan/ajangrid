@@ -151,12 +151,30 @@ export interface OrchStep {
   text?: string
 }
 
+/** Yöneticinin önerdiği yeni ajan (kullanıcı onayından sonra oluşturulur) */
+export interface AgentProposal {
+  name: string
+  title: string
+  role: string
+  engine: EngineKind
+  cli?: CliId
+  apiProvider?: ApiProvider
+  localToolId?: string
+  model: string
+  effort: Effort
+  permissions: AgentPermissions
+  /** Uyarılar (ör. CLI kurulu değil) */
+  warnings?: string[]
+}
+
 export interface OrchQuestion {
   id: string
-  kind: 'approval' | 'question' | 'limit'
+  kind: 'approval' | 'question' | 'limit' | 'team'
   text: string
   /** approval: onaylanırsa çalıştırılacak görevler */
   pending?: Assignment[]
+  /** team: onaylanırsa oluşturulacak ajanlar */
+  proposals?: AgentProposal[]
 }
 
 export interface Orchestration {

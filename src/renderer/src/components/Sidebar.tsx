@@ -4,11 +4,10 @@ import { useActiveTeam, useStore, useTeamAgents } from '../store'
 import { agentState, engineLine, initialOf } from '../util'
 import { Logo, Moon, Plus, Sun } from './Icons'
 
-export type View = 'command' | 'grid' | 'agents' | 'engines'
+export type View = 'command' | 'agents' | 'engines'
 
 const NAV: Array<{ id: View; label: string }> = [
   { id: 'command', label: 'Komuta Merkezi' },
-  { id: 'grid', label: 'Terminal Izgarası' },
   { id: 'agents', label: 'Ajanlar' },
   { id: 'engines', label: 'Motorlar ve Limitler' }
 ]

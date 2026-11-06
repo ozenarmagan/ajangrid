@@ -61,6 +61,9 @@ export function AgentTerminal({
   }, [runs])
 
   const header = (prompt: string, startedAt: number): string => {
+    // Yönetici turlarında istem çok uzun; başlıkta yalnızca etiket göster
+    if (prompt.includes('ekibinin yöneticisisin'))
+      return `${VIOLET}── ${timeOf(startedAt)} · yönetici turu${RESET}\r\n`
     const first = prompt.split(/\r?\n/)[0].slice(0, 90)
     return `${VIOLET}── ${timeOf(startedAt)} · ${first}${prompt.length > 90 ? '…' : ''}${RESET}\r\n`
   }

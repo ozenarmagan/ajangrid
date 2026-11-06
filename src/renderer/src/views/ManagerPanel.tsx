@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Agent, OrchStep, Orchestration } from '../../../shared/types'
+import {
+  EFFORT_LABELS,
+  type Agent,
+  type AgentProposal,
+  type OrchStep,
+  type Orchestration
+} from '../../../shared/types'
 import { Stop } from '../components/Icons'
 import { useActiveTeam, useStore, useTeamAgents } from '../store'
-import { cleanError, timeOf } from '../util'
-import { AgentHeader } from '../components/AgentHeader'
+import { cleanError, engineLine, initialOf, timeOf } from '../util'
 
 const STATUS_TEXT: Record<string, { t: string; c: string; dot: string }> = {
   running: { t: 'Çalışıyor', c: 'var(--green-fg)', dot: '#34d399' },
@@ -75,6 +80,60 @@ function Step({ s, agents }: { s: OrchStep; agents: Agent[] }): React.JSX.Elemen
   )
 }
 
+function ProposalList({ proposals }: { proposals: AgentProposal[] }): React.JSX.Element {
+  const engineText = (p: AgentProposal): string =>
+    p.engine === 'api'
+      ? `API · ${p.apiProvider} · ${p.model || 'model yok'}`
+      : p.engine === 'local'
+        ? 'Yerel araç'
+        : `${p.cli === 'codex' ? 'Codex CLI' : p.cli === 'gemini' ? 'Gemini CLI' : 'Claude Code'}${p.model ? ' · ' + p.model : ''}`
+  const perms = (p: AgentProposal): string =>
+    [
+      p.permissions.write && 'dosya yazar',
+      p.permissions.shell && 'komut çalıştırır',
+      p.permissions.network && 'internet'
+    ]
+      .filter(Boolean)
+      .join(', ') || 'yalnızca okur'
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {proposals.map((p) => (
+        <div key={p.name} className="card" style={{ padding: '10px 12px', gap: 4 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 600 }}>{p.name}</span>
+            <span
+              className={`badge ${p.engine === 'api' ? 'b-api' : p.engine === 'local' ? 'b-loc' : 'b-cli'}`}
+            >
+              {engineText(p)}
+            </span>
+            {p.engine !== 'local' ? (
+              <span className="badge b-neutral">
+                Efor: {EFFORT_LABELS[p.effort].toLocaleLowerCase('tr')}
+              </span>
+            ) : null}
+          </div>
+          <div style={{ fontSize: 13 }}>{p.title}</div>
+          <div className="hint">İzinler: {perms(p)}</div>
+          {p.warnings?.length ? (
+            <div className="hint" style={{ color: 'var(--red-fg)' }}>
+              ⚠ {p.warnings.join(' · ')}
+            </div>
+          ) : null}
+          <details>
+            <summary className="hint" style={{ cursor: 'pointer' }}>
+              Rol metni
+            </summary>
+            <div className="pre" style={{ fontSize: 12.5, marginTop: 4 }}>
+              {p.role}
+            </div>
+          </details>
+        </div>
+      ))}
+      <div className="hint">Oluştuktan sonra Ajanlar ekranından her ayarı değiştirebilirsin.</div>
+    </div>
+  )
+}
+
 function QuestionCard({ o }: { o: Orchestration }): React.JSX.Element | null {
   const [text, setText] = useState('')
   const q = o.question
@@ -86,9 +145,12 @@ function QuestionCard({ o }: { o: Orchestration }): React.JSX.Element | null {
   const title =
     q.kind === 'approval'
       ? 'Onay noktası'
-      : q.kind === 'limit'
-        ? 'Limit doldu'
-        : 'Yöneticinin sorusu'
+      : q.kind === 'team'
+        ? 'Ekip önerisi'
+        : q.kind === 'limit'
+          ? 'Limit doldu'
+          : 'Yöneticinin sorusu'
+  const approvalLike = q.kind === 'approval' || q.kind === 'team'
   return (
     <div
       style={{
@@ -104,6 +166,7 @@ function QuestionCard({ o }: { o: Orchestration }): React.JSX.Element | null {
     >
       <div style={{ fontWeight: 600, color: 'var(--amber-fg)' }}>{title}</div>
       <div className="pre">{q.text}</div>
+      {q.kind === 'team' && q.proposals ? <ProposalList proposals={q.proposals} /> : null}
       <label htmlFor={`q-${q.id}`} className="sr">
         Yanıt
       </label>
@@ -113,13 +176,13 @@ function QuestionCard({ o }: { o: Orchestration }): React.JSX.Element | null {
         rows={2}
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder={q.kind === 'approval' ? 'İstersen not ya da düzeltme yaz…' : 'Yanıtını yaz…'}
+        placeholder={approvalLike ? 'İstersen not ya da düzeltme yaz…' : 'Yanıtını yaz…'}
       />
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {q.kind === 'approval' ? (
+        {approvalLike ? (
           <>
             <button className="btn btn-p" onClick={() => answer(true)}>
-              Onayla, devam et
+              {q.kind === 'team' ? 'Ekibi oluştur, devam et' : 'Onayla, devam et'}
             </button>
             <button className="btn" onClick={() => answer(false)} disabled={!text.trim()}>
               Düzeltme iste
@@ -156,7 +219,7 @@ export function ManagerPanel({
   manager: Agent
   onEdit: () => void
 }): React.JSX.Element {
-  const { orchs, outputTick, setError } = useStore()
+  const { data, orchs, outputTick, setError } = useStore()
   const agents = useTeamAgents()
   const team = useActiveTeam()
   const [goal, setGoal] = useState('')
@@ -202,20 +265,56 @@ export function ManagerPanel({
         borderRight: '1px solid var(--w08)'
       }}
     >
-      <AgentHeader
-        agent={manager}
-        onEdit={onEdit}
-        extra={
-          active ? (
+      <header
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          padding: '12px 22px',
+          borderBottom: '1px solid var(--w08)',
+          flexWrap: 'wrap'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span className="avatar" style={{ background: manager.color, width: 34, height: 34 }}>
+            {initialOf(manager.name)}
+          </span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <span style={{ fontWeight: 600 }}>
+              {manager.name}
+              {active ? (
+                <span
+                  style={{ fontSize: 12, fontWeight: 400, color: STATUS_TEXT[active.status].c }}
+                >
+                  {' '}
+                  · {STATUS_TEXT[active.status].t}
+                </span>
+              ) : null}
+            </span>
+            <span className="hint">
+              {team?.name} · {members.length} alt ajan
+            </span>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span className="badge b-cli">{engineLine(manager, data)}</span>
+          <span className="badge b-amber">
+            Efor: {EFFORT_LABELS[manager.effort].toLocaleLowerCase('tr')}
+          </span>
+          <button className="btn btn-sm" onClick={onEdit}>
+            Düzenle
+          </button>
+          {active ? (
             <button
               className="btn btn-sm btn-danger"
               onClick={() => window.api.orch.stop(active.id)}
             >
-              <Stop size={12} /> Döngüyü durdur
+              <Stop size={12} /> Durdur
             </button>
-          ) : null
-        }
-      />
+          ) : null}
+        </div>
+      </header>
 
       <div
         ref={scroller}
@@ -227,8 +326,9 @@ export function ManagerPanel({
             className="muted"
             style={{ margin: 'auto', textAlign: 'center', maxWidth: 460, lineHeight: 1.6 }}
           >
-            Yöneticiye bir hedef ver. Hedefi adımlara böler, {members.length} alt ajana dağıtır,
-            çıktıları denetler ve işaretlediğin ajanlardan önce onayını ister.
+            {members.length
+              ? `Yöneticiye bir hedef ver. Hedefi adımlara böler, ${members.length} alt ajana dağıtır, çıktıları denetler ve işaretlediğin ajanlardan önce onayını ister.`
+              : 'Yöneticiye hedefini yaz. Ekipte uygun ajan yoksa önce bir ekip önerir; onaylarsan ajanlar oluşturulur ve iş başlar.'}
           </div>
         ) : null}
         {mine.map((o) => {

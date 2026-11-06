@@ -28,7 +28,7 @@ const send = (channel: string, payload: unknown): void => {
 }
 
 const runs = new RunManager(send)
-const orch = new Orchestrator(runs, send)
+const orch = new Orchestrator(runs, send, () => broadcastData())
 
 function broadcastData(): void {
   send('data:changed', loadData())

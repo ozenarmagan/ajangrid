@@ -2,12 +2,11 @@ import { useEffect, useState } from 'react'
 import { Sidebar, type View } from './components/Sidebar'
 import { StoreProvider, useStore, useTeamAgents } from './store'
 import { CommandCenter } from './views/CommandCenter'
-import { GridView } from './views/GridView'
 import { AgentEditor } from './views/AgentEditor'
 import { EnginesView } from './views/EnginesView'
 
 function Shell(): React.JSX.Element {
-  const { data, error, setError } = useStore()
+  const { data, error, setError, startRun } = useStore()
   const agents = useTeamAgents()
   const [view, setView] = useState<View>('command')
   const [selected, setSelected] = useState<string | null>(null)
@@ -29,10 +28,13 @@ function Shell(): React.JSX.Element {
 
   if (!data) return <div className={`app t-${theme}`} />
 
+  // Kenar çubuğunda ajana tıklamak: Komuta Merkezi'nde o ajanın kartını aç
+  // (Ajanlar ekranındaysa o ajanı düzenle)
   const selectAgent = (id: string): void => {
     setSelected(id)
-    if (view === 'engines' || view === 'grid') setView('command')
+    if (view === 'engines') setView('command')
   }
+  const focusId = agents.find((a) => a.id === current && !a.isManager)?.id ?? null
 
   return (
     <div className={`app t-${theme}`}>
@@ -49,16 +51,15 @@ function Shell(): React.JSX.Element {
       <div style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', position: 'relative' }}>
         {view === 'command' ? (
           <CommandCenter
-            agentId={current}
+            focusId={focusId}
+            setFocusId={(id) => setSelected(id)}
             theme={theme}
-            onOpenGrid={() => setView('grid')}
             onEditAgent={(id) => {
               setSelected(id)
               setView('agents')
             }}
           />
         ) : null}
-        {view === 'grid' ? <GridView theme={theme} /> : null}
         {view === 'agents' ? (
           <AgentEditor
             key={`${current ?? 'yeni'}-${data.settings.activeTeamId}`}
@@ -68,6 +69,10 @@ function Shell(): React.JSX.Element {
             onTest={(id) => {
               setSelected(id)
               setView('command')
+              startRun(
+                id,
+                'Bu bir bağlantı testidir. Kendini ve görevini tek cümleyle tanıt; dosya oluşturma.'
+              )
             }}
           />
         ) : null}

@@ -2,8 +2,14 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { join } from 'path'
 import type {
   Agent,
+  AgentProposal,
+  ApiKeyStatus,
   AppData,
   Assignment,
+  CliDetection,
+  CliId,
+  Effort,
+  EngineKind,
   OrchAnswer,
   OrchQuestion,
   OrchStep,
@@ -12,7 +18,9 @@ import type {
   Team
 } from '../shared/types'
 import { API_LABELS, CLI_LABELS } from '../shared/types'
-import { loadData, newId } from './store'
+import { loadData, newId, update } from './store'
+import { detectClis } from './engines/detect'
+import { apiKeyStatuses } from './secrets'
 import type { RunManager } from './runner'
 
 type Send = (channel: string, payload: unknown) => void
@@ -24,14 +32,46 @@ const MAX_PARSE_FAILS = 3
 // eslint-disable-next-line no-control-regex
 const ANSI = /\u001b\[[0-9;?]*[ -/]*[@-~]|\u001b\][^\u0007]*\u0007/g
 
+interface RawProposal {
+  name?: string
+  title?: string
+  role?: string
+  engine?: string
+  cli?: string
+  apiProvider?: string
+  localTool?: string
+  model?: string
+  effort?: string
+  permissions?: Partial<Record<'write' | 'shell' | 'network', boolean>>
+}
+
 interface ManagerAction {
-  action: 'assign' | 'assign_parallel' | 'ask_user' | 'finish'
+  action: 'assign' | 'assign_parallel' | 'ask_user' | 'finish' | 'create_agents'
   agent?: string
   task?: string
   assignments?: Array<{ agent: string; task: string }>
   question?: string
   summary?: string
+  agents?: RawProposal[]
 }
+
+interface EngineInfo {
+  clis: CliDetection[]
+  keys: ApiKeyStatus[]
+}
+
+const COLORS = [
+  '#93c5fd',
+  '#f9a8d4',
+  '#fcd34d',
+  '#6ee7b7',
+  '#fdba74',
+  '#67e8f9',
+  '#bef264',
+  '#c4b5fd'
+]
+const EFFORTS: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max']
+const MAX_PROPOSALS = 8
 
 /** Metindeki son JSON nesnesini (tercihen ```json bloğu) bulur. */
 export function extractAction(text: string): ManagerAction | null {
@@ -113,7 +153,8 @@ export class Orchestrator {
 
   constructor(
     private runs: RunManager,
-    private send: Send
+    private send: Send,
+    private onDataChanged: () => void
   ) {}
 
   private file(o: Orchestration): string | null {
@@ -170,9 +211,6 @@ export class Orchestrator {
     const manager = data.agents.find((a) => a.teamId === teamId && a.isManager)
     if (!manager)
       throw new Error('Bu ekipte yönetici yok. Bir ajanı "Bu ekibin yöneticisi" olarak işaretle.')
-    if (data.agents.filter((a) => a.teamId === teamId && !a.isManager).length === 0) {
-      throw new Error('Yöneticinin görev verebileceği alt ajan yok.')
-    }
     const o: Orchestration = {
       id: newId(),
       teamId,
@@ -216,7 +254,27 @@ export class Orchestrator {
         .catch((err) => this.fail(o, String(err)))
       return
     }
+    if (q.kind === 'team' && ans.approve && q.proposals) {
+      const names = this.createAgents(o, q.proposals)
+      this.addStep(o, {
+        kind: 'user',
+        text: ans.text ? `Ekip onaylandı. Not: ${ans.text}` : 'Ekip onaylandı.'
+      })
+      this.addStep(o, { kind: 'note', text: `Oluşturulan ajanlar: ${names.join(', ')}` })
+      this.emit(o)
+      void this.loop(o)
+      return
+    }
     const text = (ans.text ?? '').trim()
+    if (q.kind === 'team') {
+      this.addStep(o, {
+        kind: 'user',
+        text: `Ekip önerisi onaylanmadı.${text ? ' Düzeltme: ' + text : ''}`
+      })
+      this.emit(o)
+      void this.loop(o)
+      return
+    }
     if (q.kind === 'approval') {
       this.addStep(o, { kind: 'user', text: `Onaylanmadı.${text ? ' Düzeltme: ' + text : ''}` })
     } else {
@@ -243,7 +301,35 @@ export class Orchestrator {
     this.emit(o)
   }
 
-  private buildPrompt(o: Orchestration, data: AppData, team: Team, correction?: string): string {
+  private engineSection(data: AppData, eng: EngineInfo): string[] {
+    const cliModels: Record<string, string> = {
+      claude: 'model: opus | sonnet | haiku',
+      codex: 'model: boş bırak (varsayılan)',
+      gemini: 'model: boş bırak (varsayılan)'
+    }
+    const clis = eng.clis
+      .filter((c) => c.path && c.id !== 'grok')
+      .map((c) => `cli "${c.id}" (${c.label}; ${cliModels[c.id] ?? ''})`)
+    const apis = eng.keys
+      .filter((k) => k.hasKey)
+      .map((k) => `api "${k.provider}" (${k.label}; model adı gerekli)`)
+    const tools = data.localTools.map((t) => `local "${t.name}"`)
+    return [
+      '## Kullanılabilir motorlar (yeni ajan önerirken yalnızca bunları kullan)',
+      `- CLI (abonelik, tercih edilir): ${clis.join(', ') || 'yok'}`,
+      `- API (ücretli): ${apis.join(', ') || 'yok'}`,
+      `- Yerel araçlar: ${tools.join(', ') || 'yok'}`,
+      ''
+    ]
+  }
+
+  private buildPrompt(
+    o: Orchestration,
+    data: AppData,
+    team: Team,
+    eng: EngineInfo,
+    correction?: string
+  ): string {
     const members = data.agents.filter((a) => a.teamId === o.teamId && !a.isManager)
     const names = (ids: string[]): string =>
       ids
@@ -273,8 +359,11 @@ export class Orchestrator {
       o.goal,
       '',
       '## Ekip',
-      ...members.map((a) => `- ${a.name}: ${a.title || '(unvan yok)'} — ${engineText(a, data)}`),
+      ...(members.length
+        ? members.map((a) => `- ${a.name}: ${a.title || '(unvan yok)'} — ${engineText(a, data)}`)
+        : ['(henüz alt ajan yok: önce create_agents ile bu hedefe uygun bir ekip öner)']),
       '',
+      ...this.engineSection(data, eng),
       '## Ortak çalışma klasörü',
       `${team.workdir}`,
       'Ajanlar dosyaları bu klasörde okur ve yazar. Görev verirken okunacak ve yazılacak dosya adlarını açıkça belirt (ör. "ozet.md dosyasını oku, senaryo.md dosyasına yaz").',
@@ -293,6 +382,8 @@ export class Orchestrator {
       '{"action":"assign","agent":"<ajan adı>","task":"<tek başına anlaşılır görev>"}',
       '{"action":"assign_parallel","assignments":[{"agent":"<ad>","task":"<görev>"}]}   ← yalnızca birbirinden bağımsız işler için',
       '{"action":"ask_user","question":"<kullanıcıya soru>"}   ← yalnızca gerçekten gerekliyse',
+      '{"action":"create_agents","agents":[{"name":"<kısa ad>","title":"<ne yapar, tek cümle>","role":"<ayrıntılı talimat>","engine":"cli|api|local","cli":"claude|codex|gemini","apiProvider":"anthropic|openai|google|openrouter","localTool":"<yerel araç adı>","model":"<model>","effort":"low|medium|high|xhigh|max","permissions":{"write":true,"shell":false,"network":false}}]}',
+      '   ← ekipte bu iş için uygun ajan yoksa; kullanıcı onaylayınca oluşturulur. Gereken en az izni ver, ağır işler dışında düşük/orta efor seç.',
       '{"action":"finish","summary":"<kullanıcıya sonuç özeti; üretilen dosyaları belirt>"}',
       correction ? `\nÖNEMLİ: ${correction}` : ''
     ]
@@ -338,11 +429,14 @@ export class Orchestrator {
       // 1) Yöneticiye sor
       const step = this.addStep(o, { kind: 'manager', agentId: manager.id, status: 'running' })
       this.emit(o)
+      const eng: EngineInfo = { clis: await detectClis().catch(() => []), keys: apiKeyStatuses() }
       const run = await this.runs.start(
         data,
         manager,
-        this.buildPrompt(o, data, team, correction),
-        { orchId: o.id }
+        this.buildPrompt(o, data, team, eng, correction),
+        {
+          orchId: o.id
+        }
       )
       step.runId = run.id
       this.emit(o)
@@ -392,6 +486,22 @@ export class Orchestrator {
         o.endedAt = Date.now()
         return this.emit(o)
       }
+      if (action.action === 'create_agents') {
+        const eng: EngineInfo = { clis: await detectClis().catch(() => []), keys: apiKeyStatuses() }
+        const proposals = this.normalizeProposals(data, o, action.agents ?? [], eng)
+        if (!proposals.length) {
+          this.addStep(o, { kind: 'note', text: 'Ekip önerisi boş ya da geçersizdi.' })
+          this.emit(o)
+          correction =
+            'create_agents listesi boş ya da geçersizdi. Her ajan için en az name, engine ve role ver.'
+          continue
+        }
+        return this.ask(o, {
+          kind: 'team',
+          text: `Yönetici ${proposals.length} yeni ajan oluşturmak istiyor. İncele; onaylarsan oluşturulur ve iş devam eder.`,
+          proposals
+        })
+      }
       if (action.action === 'ask_user') {
         return this.ask(o, {
           kind: 'question',
@@ -435,6 +545,89 @@ export class Orchestrator {
       }
       await this.execute(o, assignments, false)
     }
+  }
+
+  private normalizeProposals(
+    data: AppData,
+    o: Orchestration,
+    raw: RawProposal[],
+    eng: EngineInfo
+  ): AgentProposal[] {
+    const existing = new Set(
+      data.agents.filter((a) => a.teamId === o.teamId).map((a) => a.name.toLocaleLowerCase('tr'))
+    )
+    const out: AgentProposal[] = []
+    for (const r of raw.slice(0, MAX_PROPOSALS)) {
+      const name = (r.name ?? '').trim().slice(0, 40)
+      if (!name || !(r.role ?? r.title)) continue
+      if (existing.has(name.toLocaleLowerCase('tr'))) continue
+      existing.add(name.toLocaleLowerCase('tr'))
+      const warnings: string[] = []
+      const engine: EngineKind = r.engine === 'api' || r.engine === 'local' ? r.engine : 'cli'
+      const p: AgentProposal = {
+        name,
+        title: (r.title ?? '').trim(),
+        role: (r.role ?? r.title ?? '').trim(),
+        engine,
+        model: (r.model ?? '').trim(),
+        effort: EFFORTS.includes(r.effort as Effort) ? (r.effort as Effort) : 'medium',
+        permissions: {
+          write: r.permissions?.write ?? true,
+          shell: r.permissions?.shell ?? false,
+          network: r.permissions?.network ?? false
+        }
+      }
+      if (engine === 'cli') {
+        const cli = (
+          ['claude', 'codex', 'gemini'].includes(r.cli ?? '') ? r.cli : 'claude'
+        ) as CliId
+        p.cli = cli
+        if (!eng.clis.find((c) => c.id === cli)?.path)
+          warnings.push(`${cli} bu bilgisayarda bulunamadı`)
+        if (cli !== 'claude' && /^(opus|sonnet|haiku)$/i.test(p.model)) p.model = ''
+      } else if (engine === 'api') {
+        const prov = (
+          ['anthropic', 'openai', 'google', 'openrouter'].includes(r.apiProvider ?? '')
+            ? r.apiProvider
+            : 'anthropic'
+        ) as AgentProposal['apiProvider']
+        p.apiProvider = prov
+        if (!eng.keys.find((k) => k.provider === prov)?.hasKey)
+          warnings.push(`${prov} API anahtarı yok`)
+        if (!p.model) warnings.push('model adı yok')
+      } else {
+        const tool = data.localTools.find(
+          (t) => t.name.toLocaleLowerCase('tr') === (r.localTool ?? '').toLocaleLowerCase('tr')
+        )
+        if (tool) p.localToolId = tool.id
+        else warnings.push(`yerel araç bulunamadı: ${r.localTool ?? '?'}`)
+      }
+      if (warnings.length) p.warnings = warnings
+      out.push(p)
+    }
+    return out
+  }
+
+  private createAgents(o: Orchestration, proposals: AgentProposal[]): string[] {
+    const names: string[] = []
+    update((d) => {
+      let i = d.agents.filter((a) => a.teamId === o.teamId).length
+      for (const p of proposals) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { warnings, ...rest } = p
+        d.agents.push({
+          ...rest,
+          id: newId(),
+          teamId: o.teamId,
+          isManager: false,
+          color: COLORS[i++ % COLORS.length],
+          createdAt: Date.now() + i
+        })
+        names.push(p.name)
+      }
+    })
+    this.onDataChanged()
+    return names
   }
 
   private ask(o: Orchestration, q: Omit<OrchQuestion, 'id'>): void {

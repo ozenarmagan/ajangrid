@@ -43,11 +43,16 @@ export function buildCliPlan(agent: Agent, task: string, workdir: string): CliPl
       if (agent.role.trim()) args.push('--append-system-prompt-file', ROLE_FILE_PLACEHOLDER)
       if (model) args.push('--model', model)
       args.push('--effort', agent.effort)
-      const mode = p.write && p.shell ? 'bypassPermissions' : p.write ? 'acceptEdits' : 'default'
-      args.push('--permission-mode', mode)
-      if (!p.network) args.push('--disallowedTools', 'WebFetch', 'WebSearch')
-      if (mode === 'default')
-        notes.push('Yazma izni yok: ajan dosya değiştiremez, yalnızca yanıt üretir.')
+      // -p modunda soru sorulamaz; izin verilmeyen araçlar reddedilir.
+      // Bu yüzden izinler açık araç listesine çevrilir.
+      args.push('--permission-mode', p.write ? 'acceptEdits' : 'default')
+      const allowed = ['Read', 'Glob', 'Grep']
+      if (p.write) allowed.push('Edit', 'Write', 'MultiEdit', 'NotebookEdit')
+      if (p.shell) allowed.push('Bash')
+      if (p.network) allowed.push('WebFetch', 'WebSearch')
+      args.push('--allowedTools', allowed.join(','))
+      if (!p.network) args.push('--disallowedTools', 'WebFetch,WebSearch')
+      if (!p.write) notes.push('Yazma izni yok: ajan dosya değiştiremez, yalnızca yanıt üretir.')
       return {
         bin: 'claude',
         args,
