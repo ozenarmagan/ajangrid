@@ -23,9 +23,16 @@ if [ -n "$DEVID" ]; then
     TEAM=$(echo "$KIMLIK" | sed -E 's/.*\(([A-Z0-9]+)\)$/\1/')
     read -p "Apple ID (e-posta): " APPLEID
     read -p "Team ID [$TEAM]: " T; TEAM=${T:-$TEAM}
+    echo "(Notarization'ı atlamak için boş bırakıp Enter'a bas. Uygulama bu Mac'te yine çalışır.)"
     read -s -p "Uygulamaya özel parola: " PAROLA; echo
-    if ! xcrun notarytool store-credentials "$PROFIL" --apple-id "$APPLEID" --team-id "$TEAM" --password "$PAROLA"; then
-      echo "Bilgiler doğrulanamadı; notarization olmadan devam ediliyor."
+    if [ -z "$PAROLA" ]; then
+      echo "→ Notarization atlandı."
+      PROFIL=""
+    elif xcrun notarytool store-credentials "$PROFIL" --apple-id "$APPLEID" --team-id "$TEAM" --password "$PAROLA"; then
+      echo "✓ Bilgiler kaydedildi; bir dahaki sefere sorulmayacak."
+    else
+      echo "✗ Apple bilgileri kabul etmedi (parola yanlış ya da süresi dolmuş olabilir)."
+      echo "  Notarization olmadan devam ediliyor."
       PROFIL=""
     fi
   fi
