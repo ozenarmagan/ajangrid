@@ -306,7 +306,12 @@ export function AgentEditor({ agentId, onSaved, onDeleted, onTest }: Props): Rea
                 id="cli"
                 className="inp"
                 value={draft.cli}
-                onChange={(e) => set('cli', e.target.value as CliId)}
+                onChange={(e) => {
+                  // Başka bir CLI'ın model adı burada geçersiz olur: modeli sıfırla
+                  const cli = e.target.value as CliId
+                  setDraft((d) => ({ ...d, cli, model: MODEL_SUGGESTIONS[cli]?.[0] ?? '' }))
+                  setDirty(true)
+                }}
               >
                 {(Object.keys(CLI_LABELS) as CliId[]).map((c) => (
                   <option key={c} value={c}>
@@ -325,7 +330,15 @@ export function AgentEditor({ agentId, onSaved, onDeleted, onTest }: Props): Rea
                 id="prov"
                 className="inp"
                 value={draft.apiProvider}
-                onChange={(e) => set('apiProvider', e.target.value as ApiProvider)}
+                onChange={(e) => {
+                  const p = e.target.value as ApiProvider
+                  setDraft((d) => ({
+                    ...d,
+                    apiProvider: p,
+                    model: MODEL_SUGGESTIONS[p]?.[0] ?? ''
+                  }))
+                  setDirty(true)
+                }}
               >
                 {(Object.keys(API_LABELS) as ApiProvider[]).map((p) => (
                   <option key={p} value={p}>
