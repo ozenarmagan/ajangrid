@@ -40,13 +40,27 @@ export interface Agent {
   /** Boşsa ekibin çalışma klasörü kullanılır */
   workdir?: string
   permissions: AgentPermissions
+  /** Abonelik limiti dolunca ne yapılacağı (CLI ajanları) */
+  fallback?: AgentFallback
   createdAt: number
+}
+
+export type FallbackMode = 'none' | 'api' | 'wait' | 'ask'
+
+export interface AgentFallback {
+  mode: FallbackMode
+  apiProvider?: ApiProvider
+  model?: string
+  /** mode = 'wait' — kaç dakika sonra tekrar denensin */
+  waitMinutes?: number
 }
 
 export interface Team {
   id: string
   name: string
   workdir: string
+  /** Yönetici bu ajanlara görev vermeden önce kullanıcı onayı istenir */
+  checkpoints?: string[]
 }
 
 export interface LocalTool {
@@ -61,9 +75,22 @@ export interface LocalTool {
   note?: string
 }
 
+export interface ApiPrice {
+  /** USD / 1M girdi token */
+  input: number
+  /** USD / 1M çıktı token */
+  output: number
+}
+
 export interface Settings {
   theme: Theme
   activeTeamId: string | null
+  /** Sağlayıcı başına fiyat (0 = bilinmiyor, maliyet hesaplanmaz) */
+  apiPricing?: Partial<Record<ApiProvider, ApiPrice>>
+  /** Sağlayıcı başına günlük harcama tavanı, USD (0 = sınırsız) */
+  apiDailyCapUsd?: Partial<Record<ApiProvider, number>>
+  /** Yönetici döngüsünde en fazla adım */
+  maxOrchestrationSteps?: number
 }
 
 export interface AppData {
@@ -92,6 +119,78 @@ export interface RunInfo {
   error?: string
   /** API ajanlarında yanıtın kaydedildiği dosya */
   outputFile?: string
+  /** Bu çalışma bir yönetici döngüsüne aitse */
+  orchId?: string
+  /** Abonelik limiti dolduğu algılandı */
+  limitHit?: boolean
+  /** Limit nedeniyle bu çalışmanın yerine başlatılan çalışma */
+  replacedBy?: string
+  /** Bu çalışma başka bir çalışmanın yedeği ise açıklama */
+  via?: string
+  usage?: { input: number; output: number; costUsd?: number }
+}
+
+// ---------- Yönetici döngüsü ----------
+
+export type OrchStatus = 'running' | 'waiting' | 'done' | 'error' | 'stopped'
+
+export interface Assignment {
+  agentId: string
+  task: string
+}
+
+export interface OrchStep {
+  id: string
+  kind: 'manager' | 'task' | 'user' | 'note'
+  at: number
+  agentId?: string
+  task?: string
+  runId?: string
+  status?: RunStatus
+  /** Görev çıktısının özeti / yöneticinin değerlendirmesi / kullanıcı yanıtı */
+  text?: string
+}
+
+export interface OrchQuestion {
+  id: string
+  kind: 'approval' | 'question' | 'limit'
+  text: string
+  /** approval: onaylanırsa çalıştırılacak görevler */
+  pending?: Assignment[]
+}
+
+export interface Orchestration {
+  id: string
+  teamId: string
+  managerId: string
+  goal: string
+  status: OrchStatus
+  steps: OrchStep[]
+  question?: OrchQuestion
+  summary?: string
+  checkpoints: string[]
+  startedAt: number
+  endedAt?: number
+  error?: string
+}
+
+export interface OrchAnswer {
+  approve?: boolean
+  text?: string
+}
+
+// ---------- Kullanım ----------
+
+export interface UsageSummary {
+  cli: Array<{ cli: CliId; runs5h: number; runsToday: number; lastLimitAt: number | null }>
+  api: Array<{
+    provider: ApiProvider
+    inputToday: number
+    outputToday: number
+    costToday: number
+    costMonth: number
+    capUsd: number
+  }>
 }
 
 export interface RunDataEvent {

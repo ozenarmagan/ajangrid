@@ -12,7 +12,7 @@ const LAYOUTS = [
 ] as const
 
 export function GridView({ theme }: { theme: Theme }): React.JSX.Element {
-  const { data, runs, startRun } = useStore()
+  const { data, runs, startRun, orchs } = useStore()
   const agents = useTeamAgents()
   const [layout, setLayout] = useState<(typeof LAYOUTS)[number]['id']>('auto')
   const [maxId, setMaxId] = useState<string | null>(null)
@@ -30,6 +30,19 @@ export function GridView({ theme }: { theme: Theme }): React.JSX.Element {
       : Number(layout)
   const rows = Math.max(1, Math.ceil(shown.length / cols))
   const anyRunning = runs.some((r) => r.status === 'running')
+
+  const teamId = agents[0]?.teamId
+  const active = [...orchs]
+    .reverse()
+    .find((o) => o.teamId === teamId && (o.status === 'running' || o.status === 'waiting'))
+  const lastTask = active ? [...active.steps].reverse().find((s) => s.kind === 'task') : undefined
+  const banner = active
+    ? active.status === 'waiting'
+      ? 'Yönetici senden yanıt bekliyor (Komuta Merkezi).'
+      : lastTask
+        ? `${agents.find((a) => a.id === lastTask.agentId)?.name ?? 'Ajan'}: ${lastTask.task?.slice(0, 160)}`
+        : 'Yönetici planlıyor…'
+    : null
 
   const sendAll = async (): Promise<void> => {
     const t = broadcast.trim()
@@ -109,6 +122,24 @@ export function GridView({ theme }: { theme: Theme }): React.JSX.Element {
         </div>
       </header>
 
+      {banner ? (
+        <div
+          style={{
+            padding: '8px 18px',
+            borderBottom: '1px solid var(--w06)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            fontSize: 13,
+            color: 'var(--text3)'
+          }}
+        >
+          <span className="badge b-cli">Yönetici</span>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {banner}
+          </span>
+        </div>
+      ) : null}
       <div
         style={{
           flex: 1,

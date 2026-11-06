@@ -6,19 +6,45 @@ Yönetici ve alt ajanlardan oluşan ajan ekiplerini kurup çalıştırmak için 
 - **API · kullandıkça öde**: Anthropic, OpenAI, Google ve OpenRouter.
 - **Yerel araç / model**: Seslendirme modeli, ffmpeg, Hyperframes gibi komut şablonuyla çalışan programlar.
 
-## Durum: 0.1 (1. tur)
+## Durum: 0.2
 
-| Özellik                                                                      | Durum  |
-| ---------------------------------------------------------------------------- | ------ |
-| Ekipler, ajan oluşturma/düzenleme (rol, motor, model, efor, klasör, izinler) | ✅     |
-| CLI ajanlarını headless çalıştırma, canlı çıktı                              | ✅     |
-| API ajanları (yanıt `outputs/` klasörüne kaydedilir)                         | ✅     |
-| Yerel araç ajanları (komut şablonu)                                          | ✅     |
-| Terminal ızgarası, Komuta Merkezi, çalışma klasörü görünümü                  | ✅     |
-| CLI'ları otomatik bulma, şifreli API anahtarı saklama                        | ✅     |
-| Aydınlık / karanlık tema                                                     | ✅     |
-| Otonom yönetici döngüsü (planla → dağıt → denetle → onay noktaları)          | 2. tur |
-| Abonelik limit takibi, limit dolunca API yedeğine geçiş, maliyet             | 3. tur |
+| Özellik                                                                             | Durum |
+| ----------------------------------------------------------------------------------- | ----- |
+| Ekipler, ajan oluşturma/düzenleme (rol, motor, model, efor, klasör, izinler)        | ✅    |
+| CLI ajanlarını headless çalıştırma, canlı çıktı                                     | ✅    |
+| API ajanları (yanıt `outputs/` klasörüne kaydedilir)                                | ✅    |
+| Yerel araç ajanları (komut şablonu)                                                 | ✅    |
+| Otonom yönetici döngüsü: planla → dağıt (sıralı / paralel) → denetle → bitir        | ✅    |
+| Onay noktaları ve yöneticinin kullanıcıya soru sorması                              | ✅    |
+| Limit algılama ve limit dolunca API yedeği, bekle-tekrar dene ya da sor             | ✅    |
+| API token/maliyet takibi, sağlayıcı başına günlük harcama tavanı                    | ✅    |
+| "Blog → Video" ekip şablonu                                                         | ✅    |
+| Terminal ızgarası, Komuta Merkezi, çalışma klasörü görünümü, aydınlık/karanlık tema | ✅    |
+
+## Yönetici döngüsü
+
+Yöneticiye bir hedef verildiğinde her turda şu adımlar işler:
+
+1. **Yöneticiye sorulur.** Yönetici normal bir ajan gibi kendi motoruyla çalıştırılır. Komut isteminde hedef, ekip kartları (ad, unvan, motor), çalışma klasöründeki dosyalar ve o ana kadarki tüm adımlar ile çıktıları yer alır.
+2. **Yanıt bir eylem içerir.** Yönetici yanıtını tek bir json bloğuyla bitirir: `assign`, `assign_parallel`, `ask_user` ya da `finish`.
+3. **Görevler çalıştırılır.** AjanGrid görevleri ilgili ajanlarda çalıştırır, bitmelerini bekler ve çıktılarının son kısmını geçmişe ekler.
+4. **Onay noktaları uygulanır.** Onay noktası olarak işaretlenen ajanlara giden görevler çalıştırılmadan önce senin onayına sunulur. Bu kontrol yöneticiye bırakılmaz, sistem tarafından yapılır.
+5. **Limit durumunda akış durur.** Bir ajan limitine takılırsa ve yedek ayarı yoksa, nasıl devam edileceği sana sorulur.
+
+Güvenlik sınırları:
+
+- Bir hedefte en fazla N yönetici adımı çalışır (varsayılan 30, Motorlar ekranından değiştirilebilir).
+- Yönetici üst üste 3 kez geçerli bir eylem bloğu döndürmezse döngü durur.
+- Her döngü `<klasör>/.ajangrid/yonetici/<id>.json` dosyasına kaydedilir ve uygulama yeniden açılınca geçmiş olarak görünür.
+
+## Limitler hakkında
+
+CLI'lar abonelik limitlerinin yüzdesini dışarıya güvenilir şekilde vermiyor. Bu yüzden AjanGrid iki şey yapar:
+
+- **Sayım:** AjanGrid üzerinden yapılan çalışmaları sayar (son 5 saat ve bugün).
+- **Algılama:** CLI çıktısındaki "usage limit", "rate limit" ve benzeri mesajları yakalar.
+
+Limit algılandığında ajanın ayarına göre üç seçenek vardır: aynı rol ve görevle API yedeğine geçmek, belirli bir süre bekleyip tekrar denemek ya da sana sormak.
 
 ## Nasıl çalışır
 

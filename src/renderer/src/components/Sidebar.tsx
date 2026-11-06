@@ -33,6 +33,7 @@ export function Sidebar({
   const team = useActiveTeam()
   const [addingTeam, setAddingTeam] = useState(false)
   const [teamName, setTeamName] = useState('')
+  const [templateId, setTemplateId] = useState('blog-video')
   const theme: Theme = data?.settings.theme ?? 'dark'
 
   const toggleTheme = (): void => {
@@ -44,8 +45,7 @@ export function Sidebar({
     if (!name) return
     const dir = await window.api.dialog.pickFolder()
     if (!dir) return
-    const t = await window.api.teams.save({ id: '', name, workdir: dir })
-    await window.api.settings.set({ activeTeamId: t.id })
+    await window.api.templates.apply(templateId, name, dir)
     setTeamName('')
     setAddingTeam(false)
   }
@@ -148,6 +148,18 @@ export function Sidebar({
               placeholder="ör. Blog → Video"
               autoFocus
             />
+            <label className="lbl" htmlFor="new-team-tpl">
+              Şablon
+            </label>
+            <select
+              id="new-team-tpl"
+              className="inp"
+              value={templateId}
+              onChange={(e) => setTemplateId(e.target.value)}
+            >
+              <option value="blog-video">Blog → Video (6 ajan)</option>
+              <option value="empty">Boş ekip (yalnızca yönetici)</option>
+            </select>
             <button className="btn btn-sm btn-p" onClick={addTeam} disabled={!teamName.trim()}>
               Klasör seç ve oluştur
             </button>

@@ -1,8 +1,15 @@
 import { useEffect, useState } from 'react'
-import type { ApiKeyStatus, ApiProvider, CliDetection, LocalTool } from '../../../shared/types'
+import type {
+  ApiKeyStatus,
+  ApiProvider,
+  CliDetection,
+  CliId,
+  LocalTool,
+  UsageSummary
+} from '../../../shared/types'
 import { Plus, Refresh, Trash } from '../components/Icons'
 import { useStore } from '../store'
-import { cleanError } from '../util'
+import { cleanError, timeOf } from '../util'
 
 function ToolCard({
   tool,
@@ -66,8 +73,55 @@ function ToolCard({
   )
 }
 
+function NumInput({
+  id,
+  label,
+  value,
+  onCommit,
+  step = 0.01,
+  width = 80
+}: {
+  id: string
+  label: string
+  value: number
+  onCommit: (n: number) => void
+  step?: number
+  width?: number
+}): React.JSX.Element {
+  const [v, setV] = useState(String(value || ''))
+  return (
+    <>
+      <label htmlFor={id} className="sr">
+        {label}
+      </label>
+      <input
+        id={id}
+        type="number"
+        min={0}
+        step={step}
+        className="inp"
+        title={label}
+        style={{ width, minHeight: 30, padding: '4px 8px', fontSize: 13 }}
+        value={v}
+        placeholder="0"
+        onChange={(e) => setV(e.target.value)}
+        onBlur={() => onCommit(Math.max(0, Number(v) || 0))}
+      />
+    </>
+  )
+}
+
+const usd = (n: number): string => (n ? `$${n.toFixed(n < 1 ? 4 : 2)}` : '—')
+const tok = (n: number): string =>
+  n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(n)
+
 export function EnginesView(): React.JSX.Element {
-  const { data } = useStore()
+  const { data, runs } = useStore()
+  const [usage, setUsage] = useState<UsageSummary | null>(null)
+  const finished = runs.filter((r) => r.status !== 'running').length
+  useEffect(() => {
+    window.api.usage.summary().then(setUsage)
+  }, [finished])
   const [clis, setClis] = useState<CliDetection[] | null>(null)
   const [keys, setKeys] = useState<ApiKeyStatus[]>([])
   const [editing, setEditing] = useState<ApiProvider | null>(null)
@@ -180,9 +234,22 @@ export function EnginesView(): React.JSX.Element {
                   {c.installHint}
                 </div>
               ) : null}
-              <div className="hint">
-                Limit takibi: sonraki sürümde (CLI&apos;ın verdiği ölçüde).
-              </div>
+              {(() => {
+                const u = usage?.cli.find((x) => x.cli === (c.id as CliId))
+                if (!u) return <div className="hint">Özel CLI ajanı olarak kullanılabilir.</div>
+                return (
+                  <div className="hint">
+                    AjanGrid üzerinden: son 5 saatte <b>{u.runs5h}</b>, bugün <b>{u.runsToday}</b>{' '}
+                    çalışma.
+                    {u.lastLimitAt ? (
+                      <span style={{ color: 'var(--amber-fg)' }}>
+                        {' '}
+                        Son limit uyarısı: {timeOf(u.lastLimitAt)}.
+                      </span>
+                    ) : null}
+                  </div>
+                )
+              })()}
             </div>
           ))}
           {!clis ? <div className="hint">Taranıyor…</div> : null}
@@ -195,13 +262,17 @@ export function EnginesView(): React.JSX.Element {
           <span className="badge b-api">kullandıkça öde</span>
         </div>
         <div style={{ border: '1px solid var(--w08)', borderRadius: 12, overflowX: 'auto' }}>
-          <table className="tbl" style={{ minWidth: 640 }}>
+          <table className="tbl" style={{ minWidth: 1000 }}>
             <thead>
               <tr>
                 <th>Sağlayıcı</th>
                 <th>Anahtar</th>
+                <th>Bugün</th>
+                <th>Bu ay</th>
+                <th>Fiyat $/1M (girdi · çıktı)</th>
+                <th>Günlük tavan $</th>
                 <th>Kullanan ajanlar</th>
-                <th style={{ width: 280 }} />
+                <th style={{ width: 260 }} />
               </tr>
             </thead>
             <tbody>
@@ -211,6 +282,63 @@ export function EnginesView(): React.JSX.Element {
                   <td className="mono" style={{ fontSize: 12, color: 'var(--muted)' }}>
                     {k.hasKey ? `••••${k.hint}` : 'eklenmedi'}
                   </td>
+                  {(() => {
+                    const u = usage?.api.find((x) => x.provider === k.provider)
+                    const price = data?.settings.apiPricing?.[k.provider] ?? { input: 0, output: 0 }
+                    const cap = data?.settings.apiDailyCapUsd?.[k.provider] ?? 0
+                    const setPrice = (patch: Partial<typeof price>): void => {
+                      window.api.settings.set({
+                        apiPricing: {
+                          ...data?.settings.apiPricing,
+                          [k.provider]: { ...price, ...patch }
+                        }
+                      })
+                    }
+                    return (
+                      <>
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          {u ? `${tok(u.inputToday)} / ${tok(u.outputToday)}` : '—'}
+                          <div className="hint">{u ? usd(u.costToday) : ''}</div>
+                        </td>
+                        <td>{u ? usd(u.costMonth) : '—'}</td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <NumInput
+                              key={`pi-${k.provider}-${price.input}`}
+                              id={`pi-${k.provider}`}
+                              label={`${k.label} girdi fiyatı`}
+                              value={price.input}
+                              onCommit={(n) => setPrice({ input: n })}
+                            />
+                            <NumInput
+                              key={`po-${k.provider}-${price.output}`}
+                              id={`po-${k.provider}`}
+                              label={`${k.label} çıktı fiyatı`}
+                              value={price.output}
+                              onCommit={(n) => setPrice({ output: n })}
+                            />
+                          </div>
+                        </td>
+                        <td>
+                          <NumInput
+                            key={`cap-${k.provider}-${cap}`}
+                            id={`cap-${k.provider}`}
+                            label={`${k.label} günlük tavan`}
+                            value={cap}
+                            step={0.5}
+                            onCommit={(n) =>
+                              window.api.settings.set({
+                                apiDailyCapUsd: {
+                                  ...data?.settings.apiDailyCapUsd,
+                                  [k.provider]: n
+                                }
+                              })
+                            }
+                          />
+                        </td>
+                      </>
+                    )
+                  })()}
                   <td>{usedBy(k.provider)}</td>
                   <td>
                     {editing === k.provider ? (
@@ -278,11 +406,33 @@ export function EnginesView(): React.JSX.Element {
           </span>
         ) : null}
         <span className="hint">
-          Anahtarlar işletim sisteminin şifreleme servisiyle (macOS Keychain / Windows DPAPI)
-          şifrelenerek saklanır ve arayüze geri gönderilmez.
+          Fiyatları sağlayıcının güncel fiyat sayfasından gir; girilmezse maliyet hesaplanmaz ve
+          tavan uygulanmaz. Tavana ulaşılınca o sağlayıcıya o gün istek gönderilmez. Anahtarlar
+          işletim sisteminin şifreleme servisiyle (macOS Keychain / Windows DPAPI) şifrelenerek
+          saklanır ve arayüze geri gönderilmez.
           {keys[0] && !keys[0].encryptionAvailable
             ? ' Bu sistemde şifreleme kullanılamıyor; anahtar eklenemez.'
             : ''}
+        </span>
+      </section>
+
+      <section style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <h2 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Yönetici döngüsü</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span className="lbl">Bir hedefte en fazla yönetici adımı</span>
+          <NumInput
+            key={`max-${data?.settings.maxOrchestrationSteps ?? 30}`}
+            id="max-steps"
+            label="En fazla yönetici adımı"
+            value={data?.settings.maxOrchestrationSteps ?? 30}
+            step={1}
+            onCommit={(n) =>
+              window.api.settings.set({ maxOrchestrationSteps: Math.max(1, Math.round(n)) })
+            }
+          />
+        </div>
+        <span className="hint">
+          Yönetici sonsuz döngüye girip aboneliğini tüketmesin diye üst sınır.
         </span>
       </section>
 

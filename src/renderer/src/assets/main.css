@@ -375,3 +375,61 @@ table.tbl td {
   border: 2px solid transparent;
   background-clip: padding-box;
 }
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.composer {
+  font: inherit;
+  font-size: 14px;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: var(--text);
+  resize: none;
+  padding: 4px;
+}
+.chip {
+  font: inherit;
+  font-size: 12px;
+  border-radius: 999px;
+  padding: 4px 10px;
+  border: 1px solid var(--w12);
+  background: transparent;
+  color: var(--text3);
+  cursor: pointer;
+  min-height: 28px;
+}
+.chip.on {
+  background: rgba(251, 191, 36, 0.14);
+  border-color: rgba(251, 191, 36, 0.5);
+  color: var(--amber-fg);
+}
+.step-task {
+  border: 1px solid var(--w08);
+  border-radius: 10px;
+  background: var(--w03);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+}
+.linkbtn {
+  font: inherit;
+  font-size: 12px;
+  background: none;
+  border: 0;
+  color: var(--violet-fg);
+  cursor: pointer;
+  padding: 0;
+  align-self: flex-start;
+}

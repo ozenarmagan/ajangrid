@@ -6,7 +6,8 @@ import { buildCliPlan, ROLE_FILE_PLACEHOLDER } from './engines/cli'
 import { resolveCliPath } from './engines/detect'
 import { apiCommandLine, runApi } from './engines/api'
 import { getApiKey } from './secrets'
-import { newId } from './store'
+import { loadData, newId } from './store'
+import { apiCostToday, costOf, looksLikeLimit, recordApi, recordCli } from './usage'
 import { quoteArg, quoteWin } from './shellEnv'
 
 type Send = (channel: string, payload: unknown) => void
@@ -19,6 +20,12 @@ interface Live {
   output: string
   child?: ChildProcess
   abort?: AbortController
+  agent: Agent
+}
+
+export interface StartOptions {
+  orchId?: string
+  via?: string
 }
 
 function slug(s: string): string {
@@ -46,6 +53,8 @@ export function resolveWorkdir(data: AppData, agent: Agent): string {
 
 export class RunManager {
   private runs = new Map<string, Live>()
+  private waiters = new Map<string, Array<(r: RunInfo) => void>>()
+  private timers = new Set<NodeJS.Timeout>()
 
   constructor(private send: Send) {}
 
@@ -78,7 +87,100 @@ export class RunManager {
     return { command: `cd ${quoteArg(workdir)}\n${cmd} < görev.txt`, notes: plan.notes }
   }
 
-  async start(data: AppData, agent: Agent, prompt: string): Promise<RunInfo> {
+  /** Çalışma (ve limit nedeniyle yerine başlatılanlar) bitince çözülür. */
+  waitFor(runId: string): Promise<RunInfo> {
+    const live = this.runs.get(runId)
+    if (live && live.info.status !== 'running' && !live.info.replacedBy)
+      return Promise.resolve({ ...live.info })
+    if (live?.info.replacedBy) return this.waitFor(live.info.replacedBy)
+    return new Promise((resolve) => {
+      const list = this.waiters.get(runId) ?? []
+      list.push(resolve)
+      this.waiters.set(runId, list)
+    })
+  }
+
+  private settle(info: RunInfo): void {
+    const list = this.waiters.get(info.id)
+    if (!list) return
+    this.waiters.delete(info.id)
+    if (info.replacedBy) {
+      // Bekleyenleri yedek çalışmaya devret
+      const next = this.waiters.get(info.replacedBy) ?? []
+      this.waiters.set(info.replacedBy, [...next, ...list])
+      const nl = this.runs.get(info.replacedBy)
+      if (nl && nl.info.status !== 'running') this.settle(nl.info)
+      return
+    }
+    list.forEach((fn) => fn({ ...info }))
+  }
+
+  /** Limit dolduysa ajanın yedek ayarına göre davran. */
+  private handleLimit(live: Live): boolean {
+    const fb = live.agent.fallback
+    const info = live.info
+    if (!fb || fb.mode === 'none' || fb.mode === 'ask') return false
+    const data = loadData()
+    if (fb.mode === 'api') {
+      if (!fb.model || !fb.apiProvider) return false
+      const clone: Agent = {
+        ...live.agent,
+        engine: 'api',
+        apiProvider: fb.apiProvider,
+        model: fb.model
+      }
+      const via = `Limit doldu → API yedeği: ${fb.apiProvider} · ${fb.model}`
+      const pending = this.start(data, clone, info.prompt, { orchId: info.orchId, via })
+      pending.then((r) => {
+        info.replacedBy = r.id
+        this.send('run:update', { ...info })
+        this.settle(info)
+      })
+      return true
+    }
+    if (fb.mode === 'wait') {
+      const mins = Math.max(1, fb.waitMinutes ?? 30)
+      this.send('run:data', {
+        runId: info.id,
+        agentId: info.agentId,
+        chunk: `\n[limit doldu: ${mins} dk sonra tekrar denenecek]\n`,
+        stream: 'system'
+      } satisfies RunDataEvent)
+      // Bekleyenler, yeniden deneme bitene kadar beklemeye devam etsin
+      const placeholder = newId()
+      info.replacedBy = placeholder
+      const t = setTimeout(async () => {
+        this.timers.delete(t)
+        const agent = loadData().agents.find((a) => a.id === live.agent.id) ?? live.agent
+        const r = await this.start(loadData(), agent, info.prompt, {
+          orchId: info.orchId,
+          via: 'Limit sonrası yeniden deneme'
+        })
+        info.replacedBy = r.id
+        const w = this.waiters.get(placeholder)
+        if (w) {
+          this.waiters.delete(placeholder)
+          this.waiters.set(r.id, [...(this.waiters.get(r.id) ?? []), ...w])
+        }
+        this.send('run:update', { ...info })
+      }, mins * 60_000)
+      this.timers.add(t)
+      const list = this.waiters.get(info.id)
+      if (list) {
+        this.waiters.delete(info.id)
+        this.waiters.set(placeholder, list)
+      }
+      return true
+    }
+    return false
+  }
+
+  async start(
+    data: AppData,
+    agent: Agent,
+    prompt: string,
+    opts: StartOptions = {}
+  ): Promise<RunInfo> {
     const workdir = resolveWorkdir(data, agent)
     const metaDir = join(workdir, '.ajangrid')
     const runsDir = join(metaDir, 'runs')
@@ -93,9 +195,11 @@ export class RunManager {
       status: 'running',
       commandLine: '',
       workdir,
-      startedAt: Date.now()
+      startedAt: Date.now(),
+      orchId: opts.orchId,
+      via: opts.via
     }
-    const live: Live = { info, output: '' }
+    const live: Live = { info, output: '', agent }
     this.runs.set(info.id, live)
     this.trim()
     const logFile = join(runsDir, `${stamp()}-${slug(agent.name)}-${info.id.slice(0, 8)}.log`)
@@ -118,7 +222,19 @@ export class RunManager {
     const finish = (patch: Partial<RunInfo>): void => {
       if (info.status !== 'running') return
       Object.assign(info, { endedAt: Date.now(), ...patch })
+      const st = info.status as RunInfo['status']
+      if (agent.engine === 'cli' && st !== 'stopped') {
+        const limit = (st === 'error' || live.output.length < 1500) && looksLikeLimit(live.output)
+        recordCli(agent.cli ?? 'claude', limit)
+        if (limit) {
+          info.limitHit = true
+          info.status = 'error'
+          info.error = 'Abonelik limiti doldu'
+        }
+      }
       this.send('run:update', { ...info })
+      const handled = info.limitHit ? this.handleLimit(live) : false
+      if (!handled) this.settle(info)
     }
 
     try {
@@ -180,6 +296,11 @@ export class RunManager {
     const provider = agent.apiProvider ?? 'anthropic'
     const key = getApiKey(provider)
     if (!key) throw new Error(`${provider} için API anahtarı eklenmemiş (Motorlar ekranı).`)
+    const settings = loadData().settings
+    const cap = settings.apiDailyCapUsd?.[provider] ?? 0
+    if (cap > 0 && apiCostToday(provider) >= cap) {
+      throw new Error(`${provider} için günlük harcama tavanına ($${cap}) ulaşıldı.`)
+    }
     const abort = new AbortController()
     live.abort = abort
     emit(`[istek gönderildi: ${provider} · ${agent.model}]\n`, 'system')
@@ -188,10 +309,16 @@ export class RunManager {
         const outFile = join(workdir, 'outputs', `${slug(agent.name)}-${stamp()}.md`)
         writeFileSync(outFile, res.text, 'utf8')
         emit(res.text + '\n', 'stdout')
-        if (res.usage)
-          emit(`\n[token: girdi ${res.usage.input} · çıktı ${res.usage.output}]\n`, 'system')
+        let usage: RunInfo['usage']
+        if (res.usage) {
+          const cost = costOf(settings, provider, res.usage.input, res.usage.output)
+          recordApi(provider, res.usage.input, res.usage.output, cost)
+          usage = { ...res.usage, costUsd: cost }
+          const c = cost !== undefined ? ` · ~$${cost.toFixed(4)}` : ''
+          emit(`\n[token: girdi ${res.usage.input} · çıktı ${res.usage.output}${c}]\n`, 'system')
+        }
         emit(`[kaydedildi: outputs/${outFile.split(/[\\/]/).pop()}]\n`, 'system')
-        finish({ status: 'done', exitCode: 0, outputFile: outFile })
+        finish({ status: 'done', exitCode: 0, outputFile: outFile, usage })
       })
       .catch((err: Error) => {
         if (abort.signal.aborted) return finish({ status: 'stopped' })
@@ -298,10 +425,18 @@ export class RunManager {
     live.info.status = 'stopped'
     live.info.endedAt = Date.now()
     this.send('run:update', { ...live.info })
+    this.settle(live.info)
   }
 
   stopAll(): void {
+    for (const t of this.timers) clearTimeout(t)
+    this.timers.clear()
     for (const id of this.runs.keys()) this.stop(id)
+  }
+
+  /** Belirli bir yönetici döngüsüne ait süren çalışmaları durdur. */
+  stopOrch(orchId: string): void {
+    for (const r of this.runs.values()) if (r.info.orchId === orchId) this.stop(r.info.id)
   }
 
   clearFinished(agentId?: string): void {
@@ -315,7 +450,7 @@ export class RunManager {
     if (this.runs.size <= MAX_RUNS) return
     for (const [id, r] of this.runs) {
       if (this.runs.size <= MAX_RUNS) break
-      if (r.info.status !== 'running') this.runs.delete(id)
+      if (r.info.status !== 'running' && !this.waiters.has(id)) this.runs.delete(id)
     }
   }
 }

@@ -70,6 +70,8 @@ export function AgentEditor({ agentId, onSaved, onDeleted, onTest }: Props): Rea
     if (draft.engine === 'cli' && draft.cli === 'custom' && !draft.customCommand?.trim())
       return 'Özel CLI için komut şablonu gerekli.'
     if (draft.engine === 'api' && !draft.model.trim()) return 'API ajanı için model adı gerekli.'
+    if (draft.engine === 'cli' && draft.fallback?.mode === 'api' && !draft.fallback.model?.trim())
+      return 'API yedeği için model adı gerekli.'
     if (draft.engine === 'local' && !draft.localToolId)
       return 'Bir yerel araç seç (Motorlar ekranından tanımlanır).'
     return null
@@ -476,6 +478,108 @@ export function AgentEditor({ agentId, onSaved, onDeleted, onTest }: Props): Rea
               Ajanlar onay sormadan çalışır; bu izinler CLI&apos;ın kendi izin modlarına çevrilir.
               Yazma + komut birlikte açıksa ajan çalışma klasöründe her şeyi yapabilir — klasörü
               buna göre seç.
+            </span>
+          </section>
+        ) : null}
+
+        {draft.engine === 'cli' ? (
+          <section style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingBottom: 16 }}>
+            <div className="lbl">Abonelik limiti dolunca</div>
+            {(
+              [
+                ['none', 'Hata olarak bitir'],
+                ['api', 'API yedeğine geç'],
+                ['wait', 'Bekle ve tekrar dene'],
+                ['ask', 'Yöneticiye / bana sor']
+              ] as const
+            ).map(([mode, label]) => (
+              <label key={mode} className="chk">
+                <input
+                  type="radio"
+                  name="fallback"
+                  checked={(draft.fallback?.mode ?? 'none') === mode}
+                  onChange={() => set('fallback', { ...draft.fallback, mode })}
+                />{' '}
+                {label}
+              </label>
+            ))}
+            {draft.fallback?.mode === 'api' ? (
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, minmax(0, 220px))',
+                  gap: 10,
+                  marginLeft: 24
+                }}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <label className="lbl" htmlFor="fb-prov">
+                    Sağlayıcı
+                  </label>
+                  <select
+                    id="fb-prov"
+                    className="inp"
+                    value={draft.fallback.apiProvider ?? 'anthropic'}
+                    onChange={(e) =>
+                      set('fallback', {
+                        ...draft.fallback!,
+                        apiProvider: e.target.value as ApiProvider
+                      })
+                    }
+                  >
+                    {(Object.keys(API_LABELS) as ApiProvider[]).map((p) => (
+                      <option key={p} value={p}>
+                        {API_LABELS[p]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <label className="lbl" htmlFor="fb-model">
+                    Model
+                  </label>
+                  <input
+                    id="fb-model"
+                    className="inp"
+                    list="fb-model-sug"
+                    value={draft.fallback.model ?? ''}
+                    onChange={(e) => set('fallback', { ...draft.fallback!, model: e.target.value })}
+                    placeholder="ör. claude-opus-5-5"
+                  />
+                  <datalist id="fb-model-sug">
+                    {(MODEL_SUGGESTIONS[draft.fallback.apiProvider ?? 'anthropic'] ?? []).map(
+                      (m) => (
+                        <option key={m} value={m} />
+                      )
+                    )}
+                  </datalist>
+                </div>
+              </div>
+            ) : null}
+            {draft.fallback?.mode === 'wait' ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 24 }}>
+                <label className="lbl" htmlFor="fb-wait">
+                  Bekleme (dk)
+                </label>
+                <input
+                  id="fb-wait"
+                  type="number"
+                  min={1}
+                  className="inp"
+                  style={{ width: 100 }}
+                  value={draft.fallback.waitMinutes ?? 30}
+                  onChange={(e) =>
+                    set('fallback', {
+                      ...draft.fallback!,
+                      waitMinutes: Number(e.target.value) || 30
+                    })
+                  }
+                />
+              </div>
+            ) : null}
+            <span className="hint">
+              Limit, CLI çıktısındaki &quot;usage limit / rate limit&quot; türü mesajlardan
+              algılanır. API yedeği aynı rol ve görevle çalışır ama dosya yazamaz.
             </span>
           </section>
         ) : null}

@@ -6,6 +6,9 @@ import type {
   AppData,
   CliDetection,
   LocalTool,
+  OrchAnswer,
+  Orchestration,
+  UsageSummary,
   RunDataEvent,
   RunInfo,
   Settings,
@@ -62,6 +65,24 @@ const api = {
       ipcRenderer.invoke('runs:preview', a),
     onData: (cb: (e: RunDataEvent) => void): Unsubscribe => on('run:data', cb),
     onUpdate: (cb: (r: RunInfo) => void): Unsubscribe => on('run:update', cb)
+  },
+  orch: {
+    list: (teamId: string): Promise<Orchestration[]> => ipcRenderer.invoke('orch:list', teamId),
+    start: (teamId: string, goal: string, checkpoints?: string[]): Promise<Orchestration> =>
+      ipcRenderer.invoke('orch:start', teamId, goal, checkpoints),
+    stop: (id: string): Promise<void> => ipcRenderer.invoke('orch:stop', id),
+    answer: (id: string, ans: OrchAnswer): Promise<void> =>
+      ipcRenderer.invoke('orch:answer', id, ans),
+    onUpdate: (cb: (o: Orchestration) => void): Unsubscribe => on('orch:update', cb)
+  },
+  templates: {
+    list: (): Promise<Array<{ id: string; name: string; description: string }>> =>
+      ipcRenderer.invoke('templates:list'),
+    apply: (templateId: string, name: string, workdir: string): Promise<string> =>
+      ipcRenderer.invoke('templates:apply', templateId, name, workdir)
+  },
+  usage: {
+    summary: (): Promise<UsageSummary> => ipcRenderer.invoke('usage:summary')
   },
   dialog: {
     pickFolder: (): Promise<string | null> => ipcRenderer.invoke('dialog:pickFolder')

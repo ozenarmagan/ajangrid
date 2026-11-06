@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { Agent, AppData, RunDataEvent, RunInfo } from '../../shared/types'
+import type { Agent, AppData, Orchestration, RunDataEvent, RunInfo } from '../../shared/types'
 
 type ChunkListener = (e: RunDataEvent) => void
 
@@ -16,6 +16,7 @@ interface Store {
   startRun: (agentId: string, prompt: string) => Promise<RunInfo | null>
   error: string | null
   setError: (e: string | null) => void
+  orchs: Orchestration[]
 }
 
 const Ctx = createContext<Store | null>(null)
@@ -31,6 +32,8 @@ export function StoreProvider({ children }: { children: ReactNode }): React.JSX.
   const [runs, setRuns] = useState<RunInfo[]>([])
   const [outputTick, setOutputTick] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [orchs, setOrchs] = useState<Orchestration[]>([])
+  const activeTeamId = data?.settings.activeTeamId ?? data?.teams[0]?.id ?? null
   const outputs = useRef(new Map<string, string>())
   const listeners = useRef(new Set<ChunkListener>())
   const tickPending = useRef(false)
@@ -67,12 +70,36 @@ export function StoreProvider({ children }: { children: ReactNode }): React.JSX.
         })
       }
     })
+    const offOrch = window.api.orch.onUpdate((o) => {
+      setOrchs((prev) => {
+        const i = prev.findIndex((x) => x.id === o.id)
+        if (i < 0) return [...prev, o]
+        const next = prev.slice()
+        next[i] = o
+        return next
+      })
+    })
     return () => {
       offData()
       offUpdate()
       offChunk()
+      offOrch()
     }
   }, [])
+
+  // Ekip değişince o ekibin geçmiş yönetici döngülerini yükle
+  useEffect(() => {
+    if (!activeTeamId) return
+    window.api.orch.list(activeTeamId).then((list) => {
+      setOrchs((prev) => {
+        const map = new Map(prev.map((o) => [o.id, o]))
+        list.forEach((o) => {
+          if (!map.has(o.id)) map.set(o.id, o)
+        })
+        return [...map.values()].sort((a, b) => a.startedAt - b.startedAt)
+      })
+    })
+  }, [activeTeamId])
 
   const outputOf = useCallback((runId: string) => outputs.current.get(runId) ?? '', [])
 
@@ -103,8 +130,8 @@ export function StoreProvider({ children }: { children: ReactNode }): React.JSX.
   }, [])
 
   const value = useMemo(
-    () => ({ data, runs, outputOf, outputTick, subscribeChunks, startRun, error, setError }),
-    [data, runs, outputOf, outputTick, subscribeChunks, startRun, error]
+    () => ({ data, runs, outputOf, outputTick, subscribeChunks, startRun, error, setError, orchs }),
+    [data, runs, outputOf, outputTick, subscribeChunks, startRun, error, orchs]
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

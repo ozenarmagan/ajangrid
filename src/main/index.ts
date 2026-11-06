@@ -3,12 +3,23 @@ import { readdirSync, statSync } from 'fs'
 import { join, resolve, sep } from 'path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import type { Agent, ApiProvider, LocalTool, Settings, Team, WorkdirEntry } from '../shared/types'
+import type {
+  Agent,
+  ApiProvider,
+  LocalTool,
+  OrchAnswer,
+  Settings,
+  Team,
+  WorkdirEntry
+} from '../shared/types'
 import { loadData, newId, update } from './store'
 import { apiKeyStatuses, removeApiKey, setApiKey } from './secrets'
 import { detectClis } from './engines/detect'
 import { ensureDir, resolveWorkdir, RunManager } from './runner'
 import { loadLoginShellPath } from './shellEnv'
+import { Orchestrator } from './orchestrator'
+import { applyTemplate, TEMPLATES } from './templates'
+import { summary as usageSummary } from './usage'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -17,6 +28,7 @@ const send = (channel: string, payload: unknown): void => {
 }
 
 const runs = new RunManager(send)
+const orch = new Orchestrator(runs, send)
 
 function broadcastData(): void {
   send('data:changed', loadData())
@@ -184,6 +196,29 @@ function registerIpc(): void {
   ipcMain.handle('runs:output', (_e, runId: string) => runs.output(runId))
   ipcMain.handle('runs:clear', (_e, agentId?: string) => runs.clearFinished(agentId))
   ipcMain.handle('runs:preview', (_e, agent: Agent) => runs.preview(loadData(), agent))
+
+  ipcMain.handle('orch:list', (_e, teamId: string) => orch.list(teamId))
+  ipcMain.handle('orch:start', (_e, teamId: string, goal: string, checkpoints?: string[]) => {
+    if (!goal.trim()) throw new Error('Hedef boş olamaz.')
+    return orch.start(teamId, goal.trim(), checkpoints)
+  })
+  ipcMain.handle('orch:stop', (_e, id: string) => orch.stop(id))
+  ipcMain.handle('orch:answer', (_e, id: string, ans: OrchAnswer) => orch.answer(id, ans))
+
+  ipcMain.handle('templates:list', () => TEMPLATES)
+  ipcMain.handle('templates:apply', (_e, templateId: string, name: string, workdir: string) => {
+    let teamId = ''
+    update((d) => {
+      const t = applyTemplate(d, templateId, name, workdir)
+      teamId = t.id
+      d.settings.activeTeamId = t.id
+    })
+    ensureDir(workdir)
+    broadcastData()
+    return teamId
+  })
+
+  ipcMain.handle('usage:summary', () => usageSummary(loadData().settings))
 
   ipcMain.handle('dialog:pickFolder', async () => {
     if (!mainWindow) return null

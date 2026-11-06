@@ -40,9 +40,10 @@ function versionOf(path: string): Promise<string | null> {
       resolve(line ? line.trim().slice(0, 80) : null)
     }
     if (process.platform === 'win32') {
-      exec(`${quoteWin(path)} --version`, { timeout: 8000, windowsHide: true }, done)
+      exec(`${quoteWin(path)} --version`, { timeout: 8000, windowsHide: true }, done).stdin?.end()
     } else {
-      execFile(path, ['--version'], { timeout: 8000 }, done)
+      // stdin hemen kapatılır: girdi bekleyen bir program sürüm sorgusunda takılmasın
+      execFile(path, ['--version'], { timeout: 8000 }, done).stdin?.end()
     }
   })
 }
