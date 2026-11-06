@@ -14,8 +14,12 @@ asarUnpack:
 win:
   executableName: ajangrid
   target:
-    - nsis
+    - target: nsis
+      arch:
+        - x64
 nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
@@ -25,9 +29,12 @@ mac:
   entitlementsInherit: build/entitlements.mac.plist
   notarize: false
   target:
-    - dmg
+    - target: dmg
+      arch:
+        - arm64
+        - x64
 dmg:
-  artifactName: ${name}-${version}.${ext}
+  artifactName: ${name}-${version}-${arch}.${ext}
 linux:
   target:
     - AppImage

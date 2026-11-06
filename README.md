@@ -46,6 +46,24 @@ CLI'lar abonelik limitlerinin yüzdesini dışarıya güvenilir şekilde vermiyo
 
 Limit algılandığında ajanın ayarına göre üç seçenek vardır: aynı rol ve görevle API yedeğine geçmek, belirli bir süre bekleyip tekrar denemek ya da sana sormak.
 
+## Kurulum (çift tıkla)
+
+[Releases](../../releases) sayfasından işletim sistemine uygun dosyayı indir:
+
+| Sistem                              | Dosya                      |
+| ----------------------------------- | -------------------------- |
+| macOS · Apple Silicon (M1/M2/M3/M4) | `ajangrid-x.y.z-arm64.dmg` |
+| macOS · Intel                       | `ajangrid-x.y.z-x64.dmg`   |
+| Windows                             | `ajangrid-x.y.z-setup.exe` |
+
+Uygulama imzasız olduğu için ilk açılışta işletim sistemi uyarı verir:
+
+- **macOS:** DMG'yi açıp AjanGrid'i Applications klasörüne sürükle. "Hasarlı" ya da "açılamıyor" uyarısı çıkarsa Terminal'de bir kez şunu çalıştır:
+  `xattr -cr /Applications/AjanGrid.app`
+- **Windows:** SmartScreen uyarısında "Ek bilgi" → "Yine de çalıştır" seç.
+
+Yeni sürüm yayınlamak için bir etiket push etmen yeterli. Örneğin `git tag v0.2.1 && git push --tags` komutundan sonra GitHub Actions macOS ve Windows kurulum dosyalarını üretip Releases sayfasına ekler.
+
 ## Nasıl çalışır
 
 Bir ajana görev verildiğinde AjanGrid, ajanın motoruna göre bir komut oluşturur ve ajanın çalışma klasöründe çalıştırır. Görev metni programa **stdin** üzerinden verilir. Böylece uzun ya da özel karakterli metinler tırnaklama sorununa takılmaz (Windows dahil).
