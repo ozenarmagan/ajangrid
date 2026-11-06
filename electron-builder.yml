@@ -25,9 +25,13 @@ nsis:
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
 mac:
-  identity: '-'
+  # İmza: anahtar zincirindeki "Developer ID Application" (yoksa "Apple Development")
+  # sertifikası otomatik bulunur. mac-imzali-derle.command bunu ayarlar.
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
-  notarize: false
+  # Notarization için APPLE_KEYCHAIN_PROFILE ortam değişkeni gerekir; yoksa atlanır.
+  notarize: true
   target:
     - target: dmg
       arch:

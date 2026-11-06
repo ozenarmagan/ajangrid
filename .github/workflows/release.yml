@@ -18,11 +18,13 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            script: build:mac
+            # CI'da sertifika yok: ad-hoc imza + hardened runtime kapalı (aksi halde
+            # Electron Framework farklı Team ID yüzünden yüklenmez ve uygulama açılmaz)
+            script: build:mac -- -c.mac.identity=- -c.mac.hardenedRuntime=false -c.mac.notarize=false
             files: |
               dist/*.dmg
           - os: windows-latest
-            script: build:win
+            script: build:win --
             files: |
               dist/*-setup.exe
     runs-on: ${{ matrix.os }}
@@ -36,7 +38,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run ${{ matrix.script }} -- --publish never
+      - run: npm run ${{ matrix.script }} --publish never
       - name: Artifact olarak sakla
         uses: actions/upload-artifact@v4
         with:

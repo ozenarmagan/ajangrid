@@ -56,7 +56,9 @@ Limit algılandığında ajanın ayarına göre üç seçenek vardır: aynı rol
 | macOS · Intel                       | `ajangrid-x.y.z-x64.dmg`   |
 | Windows                             | `ajangrid-x.y.z-setup.exe` |
 
-Uygulama imzasız olduğu için ilk açılışta işletim sistemi uyarı verir:
+**Kendi Mac'inde imzalı DMG:** Apple geliştirici hesabın varsa repo klasöründeki `mac-imzali-derle.command` dosyasına çift tıkla. Anahtar zincirindeki Developer ID sertifikasını bulur, ilk seferde notarization için Apple ID bilgilerini bir kez sorar ve `dist/` altında imzalı, notarize edilmiş DMG üretir. Bu dosya uyarısız açılır.
+
+Releases sayfasındaki dosyalar imzasız olduğu için ilk açılışta işletim sistemi uyarı verir:
 
 - **macOS:** DMG'yi açıp AjanGrid'i Applications klasörüne sürükle. "Hasarlı" ya da "açılamıyor" uyarısı çıkarsa Terminal'de bir kez şunu çalıştır:
   `xattr -cr /Applications/AjanGrid.app`
