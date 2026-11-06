@@ -62,7 +62,7 @@ Uygulama imzasız olduğu için ilk açılışta işletim sistemi uyarı verir:
   `xattr -cr /Applications/AjanGrid.app`
 - **Windows:** SmartScreen uyarısında "Ek bilgi" → "Yine de çalıştır" seç.
 
-Yeni sürüm yayınlamak için bir etiket push etmen yeterli. Örneğin `git tag v0.2.1 && git push --tags` komutundan sonra GitHub Actions macOS ve Windows kurulum dosyalarını üretip Releases sayfasına ekler.
+Yeni sürüm yayınlamak için `package.json` içindeki `version` değerini artırıp main'e push etmen yeterli. GitHub Actions macOS ve Windows kurulum dosyalarını üretir ve `vX.Y.Z` adlı sürüme ekler.
 
 ## Nasıl çalışır
 
