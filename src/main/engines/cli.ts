@@ -60,11 +60,12 @@ export function buildCliPlan(agent: Agent, task: string, workdir: string): CliPl
       const args = ['exec', '--skip-git-repo-check', '-C', workdir]
       if (model) args.push('-m', model)
       args.push('-c', `model_reasoning_effort=${codexEffort(agent.effort)}`)
+      // --full-auto Codex 0.147'de kaldırıldı; codex exec onay sormaz, izin yalnızca --sandbox ile verilir
       if (p.write || p.shell) {
-        args.push('--full-auto')
+        args.push('--sandbox', 'workspace-write')
         if (p.network) args.push('-c', 'sandbox_workspace_write.network_access=true')
       } else {
-        args.push('-s', 'read-only')
+        args.push('--sandbox', 'read-only')
       }
       args.push('-')
       if (agent.effort === 'xhigh' || agent.effort === 'max') {

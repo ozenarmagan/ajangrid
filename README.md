@@ -73,14 +73,14 @@ Bir ajana görev verildiğinde AjanGrid, ajanın motoruna göre bir komut oluşt
 | CLI         | Çalıştırılan komut (özet)                                                                                            |
 | ----------- | -------------------------------------------------------------------------------------------------------------------- |
 | Claude Code | `claude -p --output-format text --append-system-prompt-file <rol> --model <m> --effort <e> --permission-mode <izin>` |
-| Codex CLI   | `codex exec --skip-git-repo-check -C <klasör> -m <m> -c model_reasoning_effort=<e> [--full-auto \| -s read-only] -`  |
+| Codex CLI   | `codex exec --skip-git-repo-check -C <klasör> -m <m> -c model_reasoning_effort=<e> --sandbox <workspace-write \| read-only> -`  |
 | Gemini CLI  | `gemini -m <m> [--yolo] -p "…"` (rol + görev stdin'den)                                                              |
 | Özel CLI    | Senin şablonun: `{model}`, `{effort}`, `{workdir}` yer tutucularıyla                                                 |
 
 İzinlerin karşılıkları:
 
 - **Claude Code:** Yazma + komut açıksa `bypassPermissions`, yalnızca yazma açıksa `acceptEdits`, ikisi de kapalıysa `default`. İnternet izni kapalıysa WebFetch ve WebSearch araçları kapatılır.
-- **Codex:** Yazma ya da komut izni açıksa `--full-auto`, kapalıysa `-s read-only`.
+- **Codex:** Yazma ya da komut izni açıksa `--sandbox workspace-write`, kapalıysa `--sandbox read-only`.
 - **Gemini:** Yazma ya da komut izni açıksa `--yolo`.
 
 Her çalışma `<klasör>/.ajangrid/runs/` altına log olarak yazılır. API yanıtları `<klasör>/outputs/` altına `.md` olarak kaydedilir. Böylece bir ajanın çıktısını diğer ajan dosyadan okuyabilir.
