@@ -8,18 +8,19 @@ Yönetici ve alt ajanlardan oluşan ajan ekiplerini kurup çalıştırmak için 
 
 ## Durum: 0.2
 
-| Özellik                                                                             | Durum |
-| ----------------------------------------------------------------------------------- | ----- |
-| Ekipler, ajan oluşturma/düzenleme (rol, motor, model, efor, klasör, izinler)        | ✅    |
-| CLI ajanlarını headless çalıştırma, canlı çıktı                                     | ✅    |
-| API ajanları (yanıt `outputs/` klasörüne kaydedilir)                                | ✅    |
-| Yerel araç ajanları (komut şablonu)                                                 | ✅    |
-| Otonom yönetici döngüsü: planla → dağıt (sıralı / paralel) → denetle → bitir        | ✅    |
-| Onay noktaları ve yöneticinin kullanıcıya soru sorması                              | ✅    |
-| Limit algılama ve limit dolunca API yedeği, bekle-tekrar dene ya da sor             | ✅    |
-| API token/maliyet takibi, sağlayıcı başına günlük harcama tavanı                    | ✅    |
-| "Blog → Video" ekip şablonu                                                         | ✅    |
-| Terminal ızgarası, Komuta Merkezi, çalışma klasörü görünümü, aydınlık/karanlık tema | ✅    |
+| Özellik                                                                                      | Durum |
+| -------------------------------------------------------------------------------------------- | ----- |
+| Ekipler, ajan oluşturma/düzenleme (rol, motor, model, efor, klasör, izinler)                 | ✅    |
+| CLI ajanlarını headless çalıştırma, canlı çıktı                                              | ✅    |
+| API ajanları (yanıt `outputs/` klasörüne kaydedilir)                                         | ✅    |
+| Yerel araç ajanları (komut şablonu)                                                          | ✅    |
+| Otonom yönetici döngüsü: planla → dağıt (sıralı / paralel) → denetle → bitir                 | ✅    |
+| Onay noktaları ve yöneticinin kullanıcıya soru sorması                                       | ✅    |
+| Limit algılama ve limit dolunca API yedeği, bekle-tekrar dene ya da sor                      | ✅    |
+| API token/maliyet takibi, sağlayıcı başına günlük harcama tavanı                             | ✅    |
+| "Blog → Video" ekip şablonu                                                                  | ✅    |
+| Yönetici merkezli ekran (solda yönetici, sağda ekibin okunur durumu), aydınlık/karanlık tema | ✅    |
+| Yöneticinin ekip önermesi (create_agents), onayla oluşturma                                  | ✅    |
 
 ## Yönetici döngüsü
 
@@ -122,6 +123,6 @@ src/main/
   engines/api.ts    sağlayıcı istekleri
   engines/detect.ts kurulu CLI'ları bulma
 src/renderer/src/
-  views/            Komuta Merkezi, Terminal Izgarası, Ajanlar, Motorlar
+  views/            Komuta Merkezi (yönetici + ekip), Ajanlar, Motorlar
   components/       kenar çubuğu, xterm tabanlı ajan terminali
 ```
