@@ -496,6 +496,38 @@ export function AgentEditor({ agentId, onSaved, onDeleted, onTest }: Props): Rea
           </section>
         ) : null}
 
+        {draft.engine === 'cli' &&
+        draft.cli === 'claude' &&
+        (data?.settings.mcpServers?.length ?? 0) > 0 ? (
+          <section style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div className="lbl">MCP sunucuları</div>
+            {data?.settings.mcpServers?.map((m) => {
+              const on = draft.mcpServers?.includes(m.name) ?? false
+              return (
+                <label key={m.name} className="chk">
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={(e) =>
+                      set(
+                        'mcpServers',
+                        e.target.checked
+                          ? [...(draft.mcpServers ?? []), m.name]
+                          : (draft.mcpServers ?? []).filter((x) => x !== m.name)
+                      )
+                    }
+                  />
+                  <span className="mono">{m.name}</span>
+                  <span className="hint">
+                    {m.url ? m.url : [m.command, ...(m.args ?? [])].join(' ')}
+                  </span>
+                </label>
+              )
+            })}
+            <span className="hint">Seçilen sunucuların tüm araçları bu ajana açılır.</span>
+          </section>
+        ) : null}
+
         {draft.engine === 'cli' ? (
           <section style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingBottom: 16 }}>
             <div className="lbl">Abonelik limiti dolunca</div>

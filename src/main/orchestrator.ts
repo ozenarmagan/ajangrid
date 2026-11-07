@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { join } from 'path'
+import { randomUUID } from 'crypto'
 import type {
   Agent,
   AgentProposal,
@@ -21,9 +22,12 @@ import { API_LABELS, CLI_LABELS } from '../shared/types'
 import { loadData, newId, update } from './store'
 import { detectClis } from './engines/detect'
 import { apiKeyStatuses } from './secrets'
+import { restore, snapshot } from './snapshots'
 import type { RunManager } from './runner'
 
 type Send = (channel: string, payload: unknown) => void
+export type OrchEvent = 'question' | 'done' | 'error'
+type Hook = (kind: OrchEvent, o: Orchestration) => void
 
 const RESULT_CHARS = 2500
 const DEFAULT_MAX_STEPS = 30
@@ -43,6 +47,7 @@ interface RawProposal {
   model?: string
   effort?: string
   permissions?: Partial<Record<'write' | 'shell' | 'network', boolean>>
+  mcpServers?: string[]
 }
 
 interface ManagerAction {
@@ -150,6 +155,36 @@ export class Orchestrator {
   private orchs = new Map<string, Orchestration>()
   private parseFails = new Map<string, number>()
   private loadedTeams = new Set<string>()
+  private hooks: Hook[] = []
+
+  /** Bildirim ve Telegram gibi dış kanallar için olay dinleyicisi. */
+  onEvent(fn: Hook): void {
+    this.hooks.push(fn)
+  }
+
+  private fire(kind: OrchEvent, o: Orchestration): void {
+    for (const h of this.hooks) {
+      try {
+        h(kind, structuredClone(o))
+      } catch (err) {
+        console.error('[orch hook]', err)
+      }
+    }
+  }
+
+  get(id: string): Orchestration | undefined {
+    return this.orchs.get(id)
+  }
+
+  findByPrefix(prefix: string): Orchestration | undefined {
+    if (prefix.length < 6) return undefined
+    return [...this.orchs.values()].find((o) => o.id.startsWith(prefix))
+  }
+
+  /** Süren (çalışan ya da yanıt bekleyen) döngüler. */
+  active(): Orchestration[] {
+    return [...this.orchs.values()].filter((o) => o.status === 'running' || o.status === 'waiting')
+  }
 
   constructor(
     private runs: RunManager,
@@ -299,6 +334,54 @@ export class Orchestrator {
     o.error = msg
     o.endedAt = Date.now()
     this.emit(o)
+    this.fire('error', o)
+  }
+
+  /** Durmuş ya da hata vermiş bir döngüyü kaldığı yerden sürdürür. */
+  resume(id: string): void {
+    const o = this.orchs.get(id)
+    if (!o || o.status === 'running' || o.status === 'waiting') return
+    if (this.active().some((x) => x.teamId === o.teamId)) {
+      throw new Error('Bu ekipte süren başka bir döngü var.')
+    }
+    for (const s of o.steps) {
+      if (s.status === 'running') {
+        s.status = 'stopped'
+        s.text = s.text || 'Yarıda kaldı.'
+      }
+    }
+    o.status = 'running'
+    o.error = undefined
+    o.endedAt = undefined
+    o.question = undefined
+    o.turnOffset = o.steps.filter((s) => s.kind === 'manager').length
+    this.parseFails.set(o.id, 0)
+    this.addStep(o, {
+      kind: 'note',
+      text: 'Kaldığı yerden devam ediliyor. Yarıda kalan adımların çıktıları eksik olabilir; klasördeki dosyaları kontrol et.'
+    })
+    this.emit(o)
+    void this.loop(o)
+  }
+
+  /** Klasörü bir adımdan önceki haline döndürür (döngü dururken). */
+  async restoreStep(id: string, stepId: string): Promise<void> {
+    const o = this.orchs.get(id)
+    if (!o) throw new Error('Döngü bulunamadı.')
+    if (o.status === 'running') throw new Error('Önce döngüyü durdur ya da bitmesini bekle.')
+    const step = o.steps.find((s) => s.id === stepId)
+    if (!step?.snap) throw new Error('Bu adım için anlık görüntü yok.')
+    const team = loadData().teams.find((t) => t.id === o.teamId)
+    if (!team) throw new Error('Ekip bulunamadı.')
+    const agentName = loadData().agents.find((a) => a.id === step.agentId)?.name ?? 'ajan'
+    await restore(team.workdir, step.snap)
+    this.addStep(o, {
+      kind: 'note',
+      text: `Klasör, "${agentName}" adımından önceki haline döndürüldü. (Geri almadan önceki hal de kaydedildi.)`
+    })
+    // Geri alınan dosyaları hatırlayan oturumlar artık yanıltıcı olur
+    o.sessions = {}
+    this.emit(o)
   }
 
   private engineSection(data: AppData, eng: EngineInfo): string[] {
@@ -315,11 +398,13 @@ export class Orchestrator {
       .filter((k) => k.hasKey)
       .map((k) => `api "${k.provider}" (${k.label}; model adı gerekli)`)
     const tools = data.localTools.map((t) => `local "${t.name}"`)
+    const mcp = (data.settings.mcpServers ?? []).map((m) => m.name)
     return [
       '## Kullanılabilir motorlar (yeni ajan önerirken yalnızca bunları kullan)',
       `- CLI (abonelik, tercih edilir): ${clis.join(', ') || 'yok'}`,
       `- API (ücretli): ${apis.join(', ') || 'yok'}`,
       `- Yerel araçlar: ${tools.join(', ') || 'yok'}`,
+      `- MCP sunucuları (yalnızca cli "claude" ajanlarına, "mcpServers":["ad"] ile): ${mcp.join(', ') || 'yok'}`,
       ''
     ]
   }
@@ -369,7 +454,7 @@ export class Orchestrator {
       `${team.workdir}`,
       'Ajanlar dosyaları bu klasörde okur ve yazar. Görev verirken okunacak ve yazılacak dosya adlarını açıkça belirt (ör. "ozet.md dosyasını oku, senaryo.md dosyasına yaz").',
       'API ajanları dosya yazamaz; yanıtları otomatik olarak outputs/ klasörüne kaydedilir.',
-      'Ajanlar birbirini ve geçmişi görmez: her görev tek başına anlaşılır olmalı.',
+      'Ajanlar birbirini görmez; her görev tek başına anlaşılır olmalı. İstisna: Claude Code ajanları bu hedef boyunca kendi önceki görevlerini hatırlar, onlardan düzeltme isterken yalnızca değişecek kısmı söylemen yeterli.',
       `Klasördeki dosyalar: ${files.length ? files.join(', ') : '(boş)'}`,
       '',
       o.checkpoints.length
@@ -419,7 +504,7 @@ export class Orchestrator {
       const team = data.teams.find((t) => t.id === o.teamId)
       const manager = data.agents.find((a) => a.id === o.managerId)
       if (!team || !manager) return this.fail(o, 'Ekip ya da yönetici silinmiş.')
-      const managerTurns = o.steps.filter((s) => s.kind === 'manager').length
+      const managerTurns = o.steps.filter((s) => s.kind === 'manager').length - (o.turnOffset ?? 0)
       if (managerTurns >= max) {
         return this.fail(
           o,
@@ -485,7 +570,8 @@ export class Orchestrator {
         o.status = 'done'
         o.summary = action.summary ?? prose
         o.endedAt = Date.now()
-        return this.emit(o)
+        this.emit(o)
+        return this.fire('done', o)
       }
       if (action.action === 'create_agents') {
         const eng: EngineInfo = { clis: await detectClis().catch(() => []), keys: apiKeyStatuses() }
@@ -586,6 +672,9 @@ export class Orchestrator {
         if (!eng.clis.find((c) => c.id === cli)?.path)
           warnings.push(`${cli} bu bilgisayarda bulunamadı`)
         if (cli !== 'claude' && /^(opus|sonnet|haiku)$/i.test(p.model)) p.model = ''
+        const known = (data.settings.mcpServers ?? []).map((m) => m.name)
+        const mcp = (r.mcpServers ?? []).filter((n) => known.includes(n))
+        if (cli === 'claude' && mcp.length) p.mcpServers = mcp
       } else if (engine === 'api') {
         const prov = (
           ['anthropic', 'openai', 'google', 'openrouter'].includes(r.apiProvider ?? '')
@@ -635,6 +724,7 @@ export class Orchestrator {
     o.status = 'waiting'
     o.question = { id: newId(), ...q }
     this.emit(o)
+    this.fire('question', o)
   }
 
   private async execute(
@@ -643,8 +733,17 @@ export class Orchestrator {
     approved: boolean
   ): Promise<void> {
     const data = loadData()
+    const team = data.teams.find((t) => t.id === o.teamId)
+    // Görevlerden önce klasörün anlık görüntüsü: adım geri alınabilsin
+    const names = assignments
+      .map((a) => data.agents.find((x) => x.id === a.agentId)?.name ?? '?')
+      .join(', ')
+    const snap = team ? await snapshot(team.workdir, `Adım öncesi: ${names}`) : null
+    o.sessions = o.sessions ?? {}
+    const usedSession = new Set<string>()
     const steps = assignments.map((a) =>
       this.addStep(o, {
+        snap: snap ?? undefined,
         kind: 'task',
         agentId: a.agentId,
         task: a.task,
@@ -657,10 +756,25 @@ export class Orchestrator {
       assignments.map(async (a, i) => {
         const agent = data.agents.find((x) => x.id === a.agentId)
         if (!agent) return null
-        const r = await this.runs.start(data, agent, a.task, { orchId: o.id })
+        // Claude Code ajanları aynı hedef boyunca aynı oturumda çalışır (bağlam korunur).
+        // Aynı ajan bu turda iki kez görev aldıysa ikincisi ayrı oturum açar.
+        let session: { sessionId: string; resume: boolean } | undefined
+        if (agent.engine === 'cli' && agent.cli === 'claude' && !usedSession.has(agent.id)) {
+          usedSession.add(agent.id)
+          const existing = o.sessions?.[agent.id]
+          session = existing
+            ? { sessionId: existing, resume: true }
+            : { sessionId: randomUUID(), resume: false }
+        }
+        const r = await this.runs.start(data, agent, a.task, { orchId: o.id, ...session })
         steps[i].runId = r.id
         this.emit(o)
-        return this.runs.waitFor(r.id)
+        const done = await this.runs.waitFor(r.id)
+        if (session && o.sessions) {
+          if (done.status === 'done' && !done.via) o.sessions[agent.id] = session.sessionId
+          else if (session.resume) delete o.sessions[agent.id] // oturum açılamadıysa bir dahakine yeniden başla
+        }
+        return done
       })
     )
     if (!this.alive(o)) return

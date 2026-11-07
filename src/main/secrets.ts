@@ -9,7 +9,8 @@ import { API_LABELS, type ApiKeyStatus, type ApiProvider } from '../shared/types
 
 const file = (): string => join(app.getPath('userData'), 'secrets.json')
 
-type Stored = Partial<Record<ApiProvider, { enc: string; hint: string }>>
+type SecretName = ApiProvider | 'telegram'
+type Stored = Partial<Record<SecretName, { enc: string; hint: string }>>
 
 function read(): Stored {
   try {
@@ -24,7 +25,7 @@ function write(s: Stored): void {
   writeFileSync(file(), JSON.stringify(s, null, 2), { encoding: 'utf8', mode: 0o600 })
 }
 
-export function setApiKey(provider: ApiProvider, key: string): void {
+export function setApiKey(provider: SecretName, key: string): void {
   if (!safeStorage.isEncryptionAvailable()) {
     throw new Error('Bu sistemde şifreli saklama kullanılamıyor; anahtar kaydedilmedi.')
   }
@@ -38,13 +39,13 @@ export function setApiKey(provider: ApiProvider, key: string): void {
   write(s)
 }
 
-export function removeApiKey(provider: ApiProvider): void {
+export function removeApiKey(provider: SecretName): void {
   const s = read()
   delete s[provider]
   write(s)
 }
 
-export function getApiKey(provider: ApiProvider): string | null {
+export function getApiKey(provider: SecretName): string | null {
   const entry = read()[provider]
   if (!entry) return null
   try {

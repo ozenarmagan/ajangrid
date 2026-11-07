@@ -9,6 +9,7 @@ import {
 import { Stop } from '../components/Icons'
 import { useActiveTeam, useStore, useTeamAgents } from '../store'
 import { KanbanBoard } from './KanbanBoard'
+import { Schedules } from '../components/Schedules'
 import { cleanError, engineLine, initialOf, timeOf } from '../util'
 
 const STATUS_TEXT: Record<string, { t: string; c: string; dot: string }> = {
@@ -32,7 +33,16 @@ function Collapsible({ text, limit = 420 }: { text: string; limit?: number }): R
   )
 }
 
-function Step({ s, agents }: { s: OrchStep; agents: Agent[] }): React.JSX.Element | null {
+function Step({
+  s,
+  agents,
+  onRestore
+}: {
+  s: OrchStep
+  agents: Agent[]
+  /** Döngü çalışmıyorsa klasörü bu adımdan önceki hale döndürme */
+  onRestore?: () => void
+}): React.JSX.Element | null {
   const ag = agents.find((a) => a.id === s.agentId)
   if (s.kind === 'user') {
     return (
@@ -77,6 +87,15 @@ function Step({ s, agents }: { s: OrchStep; agents: Agent[] }): React.JSX.Elemen
           <Collapsible text={s.text} limit={500} />
         </div>
       ) : null}
+      {s.snap && onRestore ? (
+        <button
+          className="linkbtn"
+          onClick={onRestore}
+          title="Klasördeki dosyaları bu görev başlamadan önceki haline döndürür"
+        >
+          ↶ Bu adımdan önceki hale dön
+        </button>
+      ) : null}
     </div>
   )
 }
@@ -114,7 +133,10 @@ function ProposalList({ proposals }: { proposals: AgentProposal[] }): React.JSX.
             ) : null}
           </div>
           <div style={{ fontSize: 13 }}>{p.title}</div>
-          <div className="hint">İzinler: {perms(p)}</div>
+          <div className="hint">
+            İzinler: {perms(p)}
+            {p.mcpServers?.length ? ` · MCP: ${p.mcpServers.join(', ')}` : ''}
+          </div>
           {p.warnings?.length ? (
             <div className="hint" style={{ color: 'var(--red-fg)' }}>
               ⚠ {p.warnings.join(' · ')}
@@ -232,6 +254,37 @@ export function ManagerPanel({
   const agents = useTeamAgents()
   const team = useActiveTeam()
   const [goal, setGoal] = useState('')
+  const [showSchedules, setShowSchedules] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+
+  // Hedef kutusuna dosya ya da bağlantı bırakma: dosyalar ekip klasöründeki kaynak/ altına kopyalanır
+  const onDrop = async (e: React.DragEvent): Promise<void> => {
+    e.preventDefault()
+    setDragOver(false)
+    if (!team) return
+    const paths = [...e.dataTransfer.files].map((f) => window.api.fs.pathForFile(f)).filter(Boolean)
+    const add: string[] = []
+    if (paths.length) {
+      try {
+        const rels = await window.api.fs.import(team.id, paths)
+        if (rels.length) add.push(`Kaynak dosyalar: ${rels.join(', ')}`)
+      } catch (err) {
+        setError(cleanError(err))
+      }
+    } else {
+      const link = (
+        e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain')
+      ).trim()
+      if (link)
+        add.push(
+          link
+            .split(/\r?\n/)
+            .filter((l) => l && !l.startsWith('#'))
+            .join('\n')
+        )
+    }
+    if (add.length) setGoal((g) => (g.trim() ? `${g.trim()}\n${add.join('\n')}` : add.join('\n')))
+  }
   const scroller = useRef<HTMLDivElement>(null)
   const members = agents.filter((a) => !a.isManager)
   const mine = useMemo(
@@ -244,6 +297,26 @@ export function ManagerPanel({
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight })
   }, [mine, outputTick, mode])
+
+  const resume = async (id: string): Promise<void> => {
+    try {
+      await window.api.orch.resume(id)
+    } catch (e) {
+      setError(cleanError(e))
+    }
+  }
+
+  const restoreStep = async (o: Orchestration, stepId: string, name: string): Promise<void> => {
+    const ok = window.confirm(
+      `Çalışma klasörü, "${name}" görevi başlamadan önceki haline döndürülecek.\n\nBu adımdan sonra oluşan ya da değişen dosyalar geri alınır. Şu anki hal de ayrıca kaydedilir.`
+    )
+    if (!ok) return
+    try {
+      await window.api.orch.restoreStep(o.id, stepId)
+    } catch (e) {
+      setError(cleanError(e))
+    }
+  }
 
   const toggleCheckpoint = (id: string): void => {
     if (!team) return
@@ -385,7 +458,21 @@ export function ManagerPanel({
                     : ''}
                 </div>
                 {o.steps.map((s) => (
-                  <Step key={s.id} s={s} agents={agents} />
+                  <Step
+                    key={s.id}
+                    s={s}
+                    agents={agents}
+                    onRestore={
+                      o.status !== 'running' && s.kind === 'task' && s.snap
+                        ? () =>
+                            restoreStep(
+                              o,
+                              s.id,
+                              agents.find((a) => a.id === s.agentId)?.name ?? 'ajan'
+                            )
+                        : undefined
+                    }
+                  />
                 ))}
                 {o.status === 'waiting' ? <QuestionCard key={o.question?.id} o={o} /> : null}
                 {o.status === 'done' && o.summary ? (
@@ -409,16 +496,30 @@ export function ManagerPanel({
                     {o.error}
                   </div>
                 ) : null}
+                {(o.status === 'error' || o.status === 'stopped') && !active ? (
+                  <div>
+                    <button className="btn btn-sm" onClick={() => resume(o.id)}>
+                      ↻ Kaldığı yerden devam et
+                    </button>
+                  </div>
+                ) : null}
               </section>
             )
           })}
         </div>
       )}
 
-      <div style={{ padding: '12px 22px 18px' }}>
+      <div style={{ padding: '12px 22px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {showSchedules ? <Schedules goal={goal} onCreated={() => setGoal('')} /> : null}
         <div
+          onDragOver={(e) => {
+            e.preventDefault()
+            setDragOver(true)
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={onDrop}
           style={{
-            border: '1px solid var(--w12)',
+            border: dragOver ? '1px dashed #8b5cf6' : '1px solid var(--w12)',
             borderRadius: 14,
             background: 'var(--panel)',
             padding: '8px 10px',
@@ -442,11 +543,10 @@ export function ManagerPanel({
                 start()
               }
             }}
-            disabled={Boolean(active)}
             placeholder={
               active
-                ? 'Süren bir döngü var. Bitmesini bekle ya da durdur.'
-                : 'Yöneticiye hedef ver… ör. "blog.md yazısını 60 saniyelik dikey videoya çevir" (Ctrl/⌘+Enter)'
+                ? 'Süren bir döngü var. Yeni hedefi yazıp zamanlayabilir ya da bitince başlatabilirsin.'
+                : 'Yöneticiye hedef ver… Dosya ya da bağlantıyı buraya sürükleyip bırakabilirsin. (Ctrl/⌘+Enter başlatır)'
             }
           />
           <div
@@ -472,13 +572,23 @@ export function ManagerPanel({
               ))}
               {!members.length ? <span className="hint">alt ajan yok</span> : null}
             </div>
-            <button
-              className="btn btn-p"
-              onClick={start}
-              disabled={!goal.trim() || Boolean(active)}
-            >
-              Başlat
-            </button>
+            <span style={{ display: 'flex', gap: 6 }}>
+              <button
+                className={`btn ${showSchedules ? 'btn-p' : ''}`}
+                onClick={() => setShowSchedules(!showSchedules)}
+                aria-pressed={showSchedules}
+                title="Bu hedefi belirli gün ve saatlerde otomatik başlat"
+              >
+                Zamanla
+              </button>
+              <button
+                className="btn btn-p"
+                onClick={start}
+                disabled={!goal.trim() || Boolean(active)}
+              >
+                Başlat
+              </button>
+            </span>
           </div>
         </div>
       </div>

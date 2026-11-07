@@ -3,6 +3,7 @@ import type { Agent, RunInfo, Theme, WorkdirEntry } from '../../../shared/types'
 import { useActiveTeam, useStore, useTeamAgents } from '../store'
 import { agentState, duration, engineLine, fileSize, initialOf, stripAnsi } from '../util'
 import { AgentTerminal } from './AgentTerminal'
+import { FilePreview } from './FilePreview'
 import { File, Folder, Refresh, Stop } from './Icons'
 
 /** Ajan çıktısını okunur hale getirir: renk kodları ve sistem satırları atılır. */
@@ -176,35 +177,34 @@ function Files(): React.JSX.Element {
   const team = useActiveTeam()
   const [open, setOpen] = useState(false)
   const [tick, setTick] = useState(0)
+  const [dir, setDir] = useState('')
   const [files, setFiles] = useState<WorkdirEntry[]>([])
+  const [preview, setPreview] = useState<string | null>(null)
   const finished = runs.filter((r) => r.status !== 'running').length
 
   useEffect(() => {
     if (!team) return
     let cancelled = false
-    Promise.all([window.api.fs.list(team.id, ''), window.api.fs.list(team.id, 'outputs')]).then(
-      ([a, b]) => {
-        if (cancelled) return
-        setFiles([
-          ...b.map((f) => ({ ...f, name: `outputs/${f.name}` })),
-          ...a.filter((f) => f.name !== 'outputs')
-        ])
-      }
-    )
+    window.api.fs.list(team.id, dir).then((list) => {
+      if (!cancelled) setFiles(list)
+    })
     return () => {
       cancelled = true
     }
-  }, [team, finished, open, tick])
+  }, [team, finished, open, tick, dir])
+
+  const up = (): void => setDir(dir.includes('/') ? dir.slice(0, dir.lastIndexOf('/')) : '')
 
   return (
-    <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <section style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <button
           className="linkbtn"
           style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}
           onClick={() => setOpen(!open)}
+          aria-expanded={open}
         >
-          {open ? '▾' : '▸'} Dosyalar ({files.length})
+          {open ? '▾' : '▸'} Dosyalar
         </button>
         <div style={{ display: 'flex', gap: 4 }}>
           <button className="ib" aria-label="Yenile" onClick={() => setTick((t) => t + 1)}>
@@ -212,39 +212,56 @@ function Files(): React.JSX.Element {
           </button>
           <button
             className="ib"
-            aria-label="Klasörü aç"
-            onClick={() => team && window.api.fs.open(team.id, '')}
+            aria-label="Klasörü Finder'da aç"
+            onClick={() => team && window.api.fs.open(team.id, dir)}
           >
             <Folder />
           </button>
         </div>
       </div>
-      {open
-        ? files.slice(0, 30).map((f) => (
-            <button
-              key={f.relPath}
-              className="nav"
-              style={{ border: '1px solid var(--w08)', justifyContent: 'space-between' }}
-              onClick={() => team && window.api.fs.open(team.id, f.relPath)}
-            >
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                {f.isDir ? <Folder /> : <File />}
-                <span
-                  className="mono"
-                  style={{
-                    fontSize: 12,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap'
-                  }}
-                >
-                  {f.name}
-                </span>
-              </span>
-              <span className="hint">{f.isDir ? '' : fileSize(f.size)}</span>
+      {open ? (
+        <>
+          {dir ? (
+            <button className="linkbtn" onClick={up}>
+              ← {dir}
             </button>
-          ))
-        : null}
+          ) : null}
+          <div
+            className="scroll"
+            style={{ maxHeight: 280, display: 'flex', flexDirection: 'column', gap: 4 }}
+          >
+            {files.map((f) => (
+              <button
+                key={f.relPath}
+                className="nav"
+                style={{ border: '1px solid var(--w08)', justifyContent: 'space-between' }}
+                onClick={() => (f.isDir ? setDir(f.relPath) : setPreview(f.relPath))}
+                title={f.isDir ? 'Klasöre gir' : 'Önizle'}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                  {f.isDir ? <Folder /> : <File />}
+                  <span
+                    className="mono"
+                    style={{
+                      fontSize: 12,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {f.name}
+                  </span>
+                </span>
+                <span className="hint">{f.isDir ? '›' : fileSize(f.size)}</span>
+              </button>
+            ))}
+            {!files.length ? <div className="hint">Klasör boş.</div> : null}
+          </div>
+        </>
+      ) : null}
+      {preview && team ? (
+        <FilePreview teamId={team.id} rel={preview} onClose={() => setPreview(null)} />
+      ) : null}
     </section>
   )
 }

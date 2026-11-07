@@ -9,6 +9,8 @@ import type {
 } from '../../../shared/types'
 import { Plus, Refresh, Trash } from '../components/Icons'
 import { useStore } from '../store'
+import { TelegramSection } from '../components/TelegramSection'
+import { McpSection } from '../components/McpSection'
 import { cleanError, timeOf } from '../util'
 
 function ToolCard({
@@ -415,6 +417,10 @@ export function EnginesView(): React.JSX.Element {
             : ''}
         </span>
       </section>
+
+      <TelegramSection />
+
+      <McpSection />
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <h2 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Yönetici döngüsü</h2>

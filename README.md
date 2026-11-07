@@ -23,6 +23,13 @@ Yönetici ve alt ajanlardan oluşan ajan ekiplerini kurup çalıştırmak için 
 | Yöneticinin ekip önermesi (create_agents), onayla oluşturma                                  | ✅    |
 | Görevlerin Kanban görünümü (onay bekliyor / çalışıyor / tamamlandı / hata)                   | ✅    |
 | Ekip yeniden adlandırma ve silme                                                             | ✅    |
+| Claude Code ajanlarında oturum sürekliliği (aynı hedefte bağlam korunur)                     | ✅    |
+| Her adımdan önce klasör anlık görüntüsü ve adımı geri alma                                   | ✅    |
+| Yarım kalan döngüyü kaldığı yerden sürdürme                                                  | ✅    |
+| Masaüstü bildirimleri ve Telegram botu (onay, yanıt, /hedef, /durum)                         | ✅    |
+| Zamanlanmış hedefler                                                                         | ✅    |
+| Uygulama içi dosya önizleme (metin, görsel, video, ses), sürükle-bırak                       | ✅    |
+| Ekip şablonu dışa/içe aktarma, MCP sunucuları (Claude Code)                                  | ✅    |
 
 ## Yönetici döngüsü
 
@@ -39,6 +46,26 @@ Güvenlik sınırları:
 - Bir hedefte en fazla N yönetici adımı çalışır (varsayılan 30, Motorlar ekranından değiştirilebilir).
 - Yönetici üst üste 3 kez geçerli bir eylem bloğu döndürmezse döngü durur.
 - Her döngü `<klasör>/.ajangrid/yonetici/<id>.json` dosyasına kaydedilir ve uygulama yeniden açılınca geçmiş olarak görünür.
+
+## Telegram
+
+1. Telegram'da `@BotFather`'a `/newbot` yaz, bota bir ad ver ve verdiği anahtarı kopyala.
+2. AjanGrid → Motorlar ve Limitler → Bildirimler ve Telegram bölümüne anahtarı yapıştırıp Kaydet'e bas.
+3. "Eşleştir"e bas ve ekrandaki `/start 123456` mesajını botuna gönder.
+
+Bundan sonra yönetici onay beklediğinde telefonuna bir mesaj gelir. Düğmeyle onaylarsın; düzeltme ya da yanıt için mesaj yazarsın. Bot şu komutları da tanır:
+
+- `/hedef <metin>`: aktif ekibe yeni bir hedef verir.
+- `/durum`: süren işleri gösterir.
+
+Yalnızca eşleştirilmiş sohbetten gelen mesajlar dikkate alınır. Bot uzun yoklama yöntemiyle çalışır, bu yüzden sunucu ya da açık bir port gerekmez, ama uygulamanın açık olması gerekir.
+
+## Anlık görüntüler
+
+Yönetici her görev turundan önce çalışma klasörünün bir anlık görüntüsünü alır. Bu görüntüler `.ajangrid/snap.git` adlı ayrı bir git deposunda tutulur; senin kendi git deposuna dokunulmaz. Adım kartındaki "Bu adımdan önceki hale dön" düğmesi klasörü o ana geri götürür. Geri almadan önceki hal de ayrıca kaydedilir.
+
+- **Hariç tutulanlar:** `node_modules`, `.venv`, `.git` ve `.ajangrid` klasörleri anlık görüntüye girmez.
+- **Disk kullanımı:** Büyük video dosyaları her anlık görüntüde yer kaplar.
 
 ## Limitler hakkında
 

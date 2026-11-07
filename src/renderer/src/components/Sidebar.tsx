@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { Theme } from '../../../shared/types'
 import { useActiveTeam, useStore, useTeamAgents } from '../store'
 import { agentState, cleanError, engineLine, initialOf } from '../util'
-import { Logo, Moon, Pencil, Plus, Sun, Trash } from './Icons'
+import { Download, Logo, Moon, Pencil, Plus, Sun, Trash } from './Icons'
 
 export type View = 'command' | 'agents' | 'engines'
 
@@ -58,6 +58,26 @@ export function Sidebar({
     if (!ok) return
     try {
       await window.api.teams.remove(id)
+    } catch (e) {
+      setError(cleanError(e))
+    }
+  }
+
+  const exportTeam = async (id: string): Promise<void> => {
+    try {
+      await window.api.teams.exportTeam(id)
+    } catch (e) {
+      setError(cleanError(e))
+    }
+  }
+
+  const importTeam = async (): Promise<void> => {
+    try {
+      const r = await window.api.teams.importTeam()
+      if (r) {
+        setAddingTeam(false)
+        if (r.warnings.length) window.alert(`Ekip içe aktarıldı.\n\n• ${r.warnings.join('\n• ')}`)
+      }
     } catch (e) {
       setError(cleanError(e))
     }
@@ -215,6 +235,14 @@ export function Sidebar({
                 </button>
                 <button
                   className="ib"
+                  aria-label={`${t.name} ekibini dışa aktar`}
+                  title="Dışa aktar (şablon dosyası)"
+                  onClick={() => exportTeam(t.id)}
+                >
+                  <Download />
+                </button>
+                <button
+                  className="ib"
                   aria-label={`${t.name} ekibini sil`}
                   title={(data?.teams.length ?? 0) <= 1 ? 'Son ekip silinemez' : 'Ekibi sil'}
                   disabled={(data?.teams.length ?? 0) <= 1}
@@ -253,6 +281,9 @@ export function Sidebar({
             </select>
             <button className="btn btn-sm btn-p" onClick={addTeam} disabled={!teamName.trim()}>
               Klasör seç ve oluştur
+            </button>
+            <button className="btn btn-sm" onClick={importTeam}>
+              Dosyadan içe aktar…
             </button>
           </div>
         ) : null}

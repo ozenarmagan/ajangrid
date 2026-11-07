@@ -32,7 +32,22 @@ function codexEffort(e: Effort): string {
   return 'high'
 }
 
-export function buildCliPlan(agent: Agent, task: string, workdir: string): CliPlan {
+export interface CliOptions {
+  /** Claude Code oturum kimliği (UUID) */
+  sessionId?: string
+  /** true: mevcut oturumu sürdür, false: bu kimlikle yeni oturum aç */
+  resume?: boolean
+  /** Claude Code MCP yapılandırma dosyası ve sunucu adları */
+  mcpConfigFile?: string
+  mcpServers?: string[]
+}
+
+export function buildCliPlan(
+  agent: Agent,
+  task: string,
+  workdir: string,
+  opts: CliOptions = {}
+): CliPlan {
   const model = agent.model.trim()
   const p = agent.permissions
   const notes: string[] = []
@@ -40,6 +55,7 @@ export function buildCliPlan(agent: Agent, task: string, workdir: string): CliPl
   switch (agent.cli) {
     case 'claude': {
       const args = ['-p', '--output-format', 'text']
+      if (opts.sessionId) args.push(opts.resume ? '--resume' : '--session-id', opts.sessionId)
       if (agent.role.trim()) args.push('--append-system-prompt-file', ROLE_FILE_PLACEHOLDER)
       if (model) args.push('--model', model)
       args.push('--effort', agent.effort)
@@ -50,6 +66,10 @@ export function buildCliPlan(agent: Agent, task: string, workdir: string): CliPl
       if (p.write) allowed.push('Edit', 'Write', 'MultiEdit', 'NotebookEdit')
       if (p.shell) allowed.push('Bash')
       if (p.network) allowed.push('WebFetch', 'WebSearch')
+      if (opts.mcpConfigFile && opts.mcpServers?.length) {
+        args.push('--mcp-config', opts.mcpConfigFile)
+        allowed.push(...opts.mcpServers.map((n) => `mcp__${n}`))
+      }
       args.push('--allowedTools', allowed.join(','))
       if (!p.network) args.push('--disallowedTools', 'WebFetch,WebSearch')
       if (!p.write) notes.push('Yazma izni yok: ajan dosya değiştiremez, yalnızca yanıt üretir.')

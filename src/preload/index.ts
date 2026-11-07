@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, IpcRendererEvent, webUtils } from 'electron'
 import type {
   Agent,
   ApiKeyStatus,
@@ -12,6 +12,7 @@ import type {
   RunDataEvent,
   RunInfo,
   Settings,
+  TelegramStatus,
   Team,
   WorkdirEntry
 } from '../shared/types'
@@ -35,7 +36,9 @@ const api = {
   },
   teams: {
     save: (t: Team): Promise<Team> => ipcRenderer.invoke('teams:save', t),
-    remove: (id: string): Promise<void> => ipcRenderer.invoke('teams:delete', id)
+    remove: (id: string): Promise<void> => ipcRenderer.invoke('teams:delete', id),
+    exportTeam: (id: string): Promise<string | null> => ipcRenderer.invoke('teams:export', id),
+    importTeam: (): Promise<{ warnings: string[] } | null> => ipcRenderer.invoke('teams:import')
   },
   tools: {
     save: (t: LocalTool): Promise<LocalTool> => ipcRenderer.invoke('tools:save', t),
@@ -73,6 +76,9 @@ const api = {
     stop: (id: string): Promise<void> => ipcRenderer.invoke('orch:stop', id),
     answer: (id: string, ans: OrchAnswer): Promise<void> =>
       ipcRenderer.invoke('orch:answer', id, ans),
+    resume: (id: string): Promise<void> => ipcRenderer.invoke('orch:resume', id),
+    restoreStep: (id: string, stepId: string): Promise<void> =>
+      ipcRenderer.invoke('orch:restoreStep', id, stepId),
     onUpdate: (cb: (o: Orchestration) => void): Unsubscribe => on('orch:update', cb)
   },
   templates: {
@@ -80,6 +86,15 @@ const api = {
       ipcRenderer.invoke('templates:list'),
     apply: (templateId: string, name: string, workdir: string): Promise<string> =>
       ipcRenderer.invoke('templates:apply', templateId, name, workdir)
+  },
+  telegram: {
+    status: (): Promise<TelegramStatus> => ipcRenderer.invoke('telegram:status'),
+    setToken: (t: string): Promise<TelegramStatus> => ipcRenderer.invoke('telegram:setToken', t),
+    removeToken: (): Promise<TelegramStatus> => ipcRenderer.invoke('telegram:removeToken'),
+    pair: (): Promise<TelegramStatus> => ipcRenderer.invoke('telegram:pair'),
+    unpair: (): Promise<TelegramStatus> => ipcRenderer.invoke('telegram:unpair'),
+    test: (): Promise<void> => ipcRenderer.invoke('telegram:test'),
+    onStatus: (cb: (s: TelegramStatus) => void): Unsubscribe => on('telegram:status', cb)
   },
   usage: {
     summary: (): Promise<UsageSummary> => ipcRenderer.invoke('usage:summary')
@@ -92,7 +107,12 @@ const api = {
       ipcRenderer.invoke('fs:list', teamId, rel),
     open: (teamId: string, rel: string): Promise<void> =>
       ipcRenderer.invoke('fs:open', teamId, rel),
-    openAgentDir: (agentId: string): Promise<void> => ipcRenderer.invoke('fs:openAgentDir', agentId)
+    openAgentDir: (agentId: string): Promise<void> =>
+      ipcRenderer.invoke('fs:openAgentDir', agentId),
+    import: (teamId: string, paths: string[]): Promise<string[]> =>
+      ipcRenderer.invoke('fs:import', teamId, paths),
+    /** Sürüklenen dosyanın diskteki yolu */
+    pathForFile: (f: File): string => webUtils.getPathForFile(f)
   }
 }
 

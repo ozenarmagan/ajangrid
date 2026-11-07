@@ -77,3 +77,8 @@ export const Pencil = ({ size = 14 }: P): React.JSX.Element => (
     <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
   </svg>
 )
+export const Download = ({ size = 14 }: P): React.JSX.Element => (
+  <svg {...base(size)}>
+    <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
+  </svg>
+)

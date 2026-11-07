@@ -26,6 +26,9 @@ interface Live {
 export interface StartOptions {
   orchId?: string
   via?: string
+  /** Claude Code oturumu: aynı hedefte bağlamı korumak için */
+  sessionId?: string
+  resume?: boolean
 }
 
 function slug(s: string): string {
@@ -256,7 +259,31 @@ export class RunManager {
         this.send('run:update', { ...info })
         this.spawnShell(cmd, '', workdir, live, emit, finish)
       } else {
-        const plan = buildCliPlan(agent, prompt, workdir)
+        // MCP sunucuları (Claude Code): yapılandırma dosyasını yaz
+        let mcpConfigFile: string | undefined
+        const mcpNames = (agent.mcpServers ?? []).filter((n) =>
+          data.settings.mcpServers?.some((m) => m.name === n)
+        )
+        if (agent.cli === 'claude' && mcpNames.length) {
+          const servers: Record<string, unknown> = {}
+          for (const m of data.settings.mcpServers ?? []) {
+            if (!mcpNames.includes(m.name)) continue
+            servers[m.name] = m.url
+              ? { type: 'http', url: m.url }
+              : { command: m.command, args: m.args ?? [], env: m.env ?? {} }
+          }
+          mcpConfigFile = join(metaDir, `mcp-${slug(agent.name)}.json`)
+          writeFileSync(mcpConfigFile, JSON.stringify({ mcpServers: servers }, null, 2), {
+            encoding: 'utf8',
+            mode: 0o600
+          })
+        }
+        const plan = buildCliPlan(agent, prompt, workdir, {
+          sessionId: opts.sessionId,
+          resume: opts.resume,
+          mcpConfigFile,
+          mcpServers: mcpNames
+        })
         let args = plan.args
         if (plan.roleFileContent) {
           const roleFile = join(metaDir, `rol-${slug(agent.name)}.md`)

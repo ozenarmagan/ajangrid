@@ -42,6 +42,8 @@ export interface Agent {
   permissions: AgentPermissions
   /** Abonelik limiti dolunca ne yapılacağı (CLI ajanları) */
   fallback?: AgentFallback
+  /** Bu ajana bağlı MCP sunucularının adları (şimdilik Claude Code ajanları) */
+  mcpServers?: string[]
   createdAt: number
 }
 
@@ -82,6 +84,29 @@ export interface ApiPrice {
   output: number
 }
 
+export interface McpServer {
+  /** Harf, rakam, - ve _ (Claude araç adlarında kullanılır) */
+  name: string
+  /** stdio sunucusu: çalıştırılacak komut ve argümanlar */
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+  /** HTTP sunucusu */
+  url?: string
+}
+
+export interface Schedule {
+  id: string
+  teamId: string
+  goal: string
+  /** 0 = Pazar … 6 = Cumartesi */
+  days: number[]
+  /** "HH:MM" */
+  time: string
+  enabled: boolean
+  lastRunAt?: number
+}
+
 export interface Settings {
   theme: Theme
   activeTeamId: string | null
@@ -91,6 +116,13 @@ export interface Settings {
   apiDailyCapUsd?: Partial<Record<ApiProvider, number>>
   /** Yönetici döngüsünde en fazla adım */
   maxOrchestrationSteps?: number
+  mcpServers?: McpServer[]
+  schedules?: Schedule[]
+  /** Telegram: eşleştirilmiş sohbet */
+  telegramChatId?: number
+  telegramChatName?: string
+  /** macOS / Windows bildirimleri */
+  notifications?: boolean
 }
 
 export interface AppData {
@@ -149,6 +181,8 @@ export interface OrchStep {
   status?: RunStatus
   /** Görev çıktısının özeti / yöneticinin değerlendirmesi / kullanıcı yanıtı */
   text?: string
+  /** Bu adımdan önce alınan klasör anlık görüntüsü (geri almak için) */
+  snap?: string
 }
 
 /** Yöneticinin önerdiği yeni ajan (kullanıcı onayından sonra oluşturulur) */
@@ -163,6 +197,7 @@ export interface AgentProposal {
   model: string
   effort: Effort
   permissions: AgentPermissions
+  mcpServers?: string[]
   /** Uyarılar (ör. CLI kurulu değil) */
   warnings?: string[]
 }
@@ -190,6 +225,10 @@ export interface Orchestration {
   startedAt: number
   endedAt?: number
   error?: string
+  /** Ajan başına CLI oturum kimliği (aynı hedef boyunca bağlam korunur) */
+  sessions?: Record<string, string>
+  /** Sürdürmede adım sınırı bu sayıdan itibaren yeniden sayılır */
+  turnOffset?: number
 }
 
 export interface OrchAnswer {
@@ -265,4 +304,15 @@ export const API_LABELS: Record<ApiProvider, string> = {
   openai: 'OpenAI',
   google: 'Google',
   openrouter: 'OpenRouter'
+}
+
+export interface TelegramStatus {
+  hasToken: boolean
+  botName: string | null
+  chatName: string | null
+  paired: boolean
+  /** Eşleştirme sürüyorsa kullanıcının bota göndereceği kod */
+  pairCode: string | null
+  running: boolean
+  error: string | null
 }
