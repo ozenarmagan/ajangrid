@@ -16,6 +16,7 @@ import { AGENT_COLORS, blankAgent, cleanError, initialOf } from '../util'
 const MODEL_SUGGESTIONS: Record<string, string[]> = {
   claude: ['opus', 'sonnet', 'haiku'],
   codex: [],
+  antigravity: [],
   gemini: [],
   custom: [],
   anthropic: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'],

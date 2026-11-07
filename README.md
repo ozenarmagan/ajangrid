@@ -73,12 +73,13 @@ Yeni sürüm yayınlamak için `package.json` içindeki `version` değerini art�
 
 Bir ajana görev verildiğinde AjanGrid, ajanın motoruna göre bir komut oluşturur ve ajanın çalışma klasöründe çalıştırır. Görev metni programa **stdin** üzerinden verilir. Böylece uzun ya da özel karakterli metinler tırnaklama sorununa takılmaz (Windows dahil).
 
-| CLI         | Çalıştırılan komut (özet)                                                                                                      |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Claude Code | `claude -p --output-format text --append-system-prompt-file <rol> --model <m> --effort <e> --permission-mode <izin>`           |
-| Codex CLI   | `codex exec --skip-git-repo-check -C <klasör> -m <m> -c model_reasoning_effort=<e> --sandbox <workspace-write \| read-only> -` |
-| Gemini CLI  | `gemini -m <m> [--yolo] -p "…"` (rol + görev stdin'den)                                                                        |
-| Özel CLI    | Senin şablonun: `{model}`, `{effort}`, `{workdir}` yer tutucularıyla                                                           |
+| CLI               | Çalıştırılan komut (özet)                                                                                                                      |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code       | `claude -p --output-format text --append-system-prompt-file <rol> --model <m> --effort <e> --permission-mode <izin>`                           |
+| Codex CLI         | `codex exec --skip-git-repo-check -C <klasör> -m <m> -c model_reasoning_effort=<e> --sandbox <workspace-write \| read-only> -`                 |
+| Antigravity CLI   | `agy -p "…" --disable-slash-commands --model <m> --effort <e> [--mode accept-edits \| --dangerously-skip-permissions]` (rol + görev stdin'den) |
+| Gemini CLI (eski) | `gemini -m <m> [--yolo] -p "…"`. Bireysel, Pro ve Ultra hesaplarda 18 Haziran 2026'dan beri çalışmıyor                                         |
+| Özel CLI          | Senin şablonun: `{model}`, `{effort}`, `{workdir}` yer tutucularıyla                                                                           |
 
 İzinlerin karşılıkları:
 

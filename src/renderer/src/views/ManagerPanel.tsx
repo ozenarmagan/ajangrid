@@ -87,7 +87,7 @@ function ProposalList({ proposals }: { proposals: AgentProposal[] }): React.JSX.
       ? `API · ${p.apiProvider} · ${p.model || 'model yok'}`
       : p.engine === 'local'
         ? 'Yerel araç'
-        : `${p.cli === 'codex' ? 'Codex CLI' : p.cli === 'gemini' ? 'Gemini CLI' : 'Claude Code'}${p.model ? ' · ' + p.model : ''}`
+        : `${p.cli === 'codex' ? 'Codex CLI' : p.cli === 'gemini' ? 'Gemini CLI' : p.cli === 'antigravity' ? 'Antigravity CLI' : 'Claude Code'}${p.model ? ' · ' + p.model : ''}`
   const perms = (p: AgentProposal): string =>
     [
       p.permissions.write && 'dosya yazar',

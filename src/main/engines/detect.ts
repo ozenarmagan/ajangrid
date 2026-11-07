@@ -16,10 +16,18 @@ const KNOWN: Array<Omit<CliDetection, 'path' | 'version'>> = [
     installHint: 'npm install -g @openai/codex  →  ardından: codex login'
   },
   {
+    id: 'antigravity',
+    label: 'Antigravity CLI',
+    bin: 'agy',
+    installHint:
+      'curl -fsSL https://antigravity.google/cli/install.sh | bash  →  ardından: agy (giriş yap)'
+  },
+  {
     id: 'gemini',
-    label: 'Gemini CLI',
+    label: 'Gemini CLI (eski)',
     bin: 'gemini',
-    installHint: 'npm install -g @google/gemini-cli  →  ardından: gemini (giriş yap)'
+    installHint:
+      "Bireysel hesaplar için 18 Haziran 2026'da kapatıldı; yerine Antigravity CLI kullan."
   },
   {
     id: 'grok',

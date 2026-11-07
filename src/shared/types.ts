@@ -1,7 +1,7 @@
 // Ana süreç ile arayüz arasında paylaşılan tipler.
 
 export type EngineKind = 'cli' | 'api' | 'local'
-export type CliId = 'claude' | 'codex' | 'gemini' | 'custom'
+export type CliId = 'claude' | 'codex' | 'antigravity' | 'gemini' | 'custom'
 export type ApiProvider = 'anthropic' | 'openai' | 'google' | 'openrouter'
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 export type Theme = 'dark' | 'light'
@@ -255,7 +255,8 @@ export const EFFORT_LABELS: Record<Effort, string> = {
 export const CLI_LABELS: Record<CliId, string> = {
   claude: 'Claude Code',
   codex: 'Codex CLI',
-  gemini: 'Gemini CLI',
+  antigravity: 'Antigravity CLI',
+  gemini: 'Gemini CLI (eski)',
   custom: 'Özel CLI'
 }
 

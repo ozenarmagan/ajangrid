@@ -78,12 +78,36 @@ export function buildCliPlan(agent: Agent, task: string, workdir: string): CliPl
       }
       return { bin: 'codex', args, stdin: withRole(agent, task), notes }
     }
+    case 'antigravity': {
+      // Antigravity CLI (agy): -p ile tek seferlik çalışır; stdin -p metnine eklenir
+      const args = ['-p', 'Aşağıdaki talimatları uygula.', '--disable-slash-commands']
+      if (model) args.push('--model', model)
+      // Efor kademeleri modele göre değişir; güvenli eşleme
+      args.push(
+        '--effort',
+        agent.effort === 'xhigh' || agent.effort === 'max' ? 'high' : agent.effort
+      )
+      if (p.write && p.shell) args.push('--dangerously-skip-permissions')
+      else if (p.write) args.push('--mode', 'accept-edits')
+      if (agent.effort === 'xhigh' || agent.effort === 'max') {
+        notes.push('Antigravity için efor "high" olarak gönderilir.')
+      }
+      if (p.network && !(p.write && p.shell)) {
+        notes.push(
+          "İnternet izni Antigravity'de ayrıca kısıtlanamaz; ajanın kendi politikası uygulanır."
+        )
+      }
+      return { bin: 'agy', args, stdin: withRole(agent, task), notes }
+    }
     case 'gemini': {
       const args: string[] = []
       if (model) args.push('-m', model)
       if (p.write || p.shell) args.push('--yolo')
       args.push('-p', 'Aşağıdaki talimatları uygula.')
       notes.push('Gemini CLI efor seviyesi desteklemez; bu ayar yok sayılır.')
+      notes.push(
+        'Gemini CLI bireysel/Pro/Ultra hesaplarda artık çalışmıyor (yalnızca API anahtarı ya da kurumsal lisans). Antigravity CLI kullan.'
+      )
       return { bin: 'gemini', args, stdin: withRole(agent, task), notes }
     }
     case 'custom':

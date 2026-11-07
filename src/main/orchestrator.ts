@@ -305,7 +305,8 @@ export class Orchestrator {
     const cliModels: Record<string, string> = {
       claude: 'model: opus | sonnet | haiku',
       codex: 'model: boş bırak (varsayılan)',
-      gemini: 'model: boş bırak (varsayılan)'
+      antigravity: 'model: boş bırak (varsayılan)',
+      gemini: 'eski; yalnızca API anahtarıyla çalışır'
     }
     const clis = eng.clis
       .filter((c) => c.path && c.id !== 'grok')
@@ -382,7 +383,7 @@ export class Orchestrator {
       '{"action":"assign","agent":"<ajan adı>","task":"<tek başına anlaşılır görev>"}',
       '{"action":"assign_parallel","assignments":[{"agent":"<ad>","task":"<görev>"}]}   ← yalnızca birbirinden bağımsız işler için',
       '{"action":"ask_user","question":"<kullanıcıya soru>"}   ← yalnızca gerçekten gerekliyse',
-      '{"action":"create_agents","agents":[{"name":"<kısa ad>","title":"<ne yapar, tek cümle>","role":"<ayrıntılı talimat>","engine":"cli|api|local","cli":"claude|codex|gemini","apiProvider":"anthropic|openai|google|openrouter","localTool":"<yerel araç adı>","model":"<model>","effort":"low|medium|high|xhigh|max","permissions":{"write":true,"shell":false,"network":false}}]}',
+      '{"action":"create_agents","agents":[{"name":"<kısa ad>","title":"<ne yapar, tek cümle>","role":"<ayrıntılı talimat>","engine":"cli|api|local","cli":"claude|codex|antigravity","apiProvider":"anthropic|openai|google|openrouter","localTool":"<yerel araç adı>","model":"<model>","effort":"low|medium|high|xhigh|max","permissions":{"write":true,"shell":false,"network":false}}]}',
       '   ← ekipte bu iş için uygun ajan yoksa; kullanıcı onaylayınca oluşturulur. Gereken en az izni ver, ağır işler dışında düşük/orta efor seç.',
       '{"action":"finish","summary":"<kullanıcıya sonuç özeti; üretilen dosyaları belirt>"}',
       correction ? `\nÖNEMLİ: ${correction}` : ''
@@ -579,7 +580,7 @@ export class Orchestrator {
       }
       if (engine === 'cli') {
         const cli = (
-          ['claude', 'codex', 'gemini'].includes(r.cli ?? '') ? r.cli : 'claude'
+          ['claude', 'codex', 'antigravity', 'gemini'].includes(r.cli ?? '') ? r.cli : 'claude'
         ) as CliId
         p.cli = cli
         if (!eng.clis.find((c) => c.id === cli)?.path)
