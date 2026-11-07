@@ -1,19 +1,19 @@
 import { useEffect, useState } from 'react'
 import { Sidebar, type View } from './components/Sidebar'
-import { StoreProvider, useStore, useTeamAgents } from './store'
+import { StoreProvider, useAgents, useStore } from './store'
 import { CommandCenter } from './views/CommandCenter'
 import { AgentEditor } from './views/AgentEditor'
 import { EnginesView } from './views/EnginesView'
 import { HelpView } from './views/HelpView'
 
 function Shell(): React.JSX.Element {
-  const { data, error, setError, startRun } = useStore()
-  const agents = useTeamAgents()
+  const { data, error, setError, startRun, setOrchId } = useStore()
+  const agents = useAgents()
   const [view, setView] = useState<View>('command')
   const [selected, setSelected] = useState<string | null>(null)
   const theme = data?.settings.theme ?? 'dark'
 
-  // Ekip değişince ya da seçili ajan silinince geçerli bir ajana düş.
+  // Seçili ajan silinince geçerli bir ajana düş.
   // Ajanlar ekranında selected = null "yeni ajan" formu demektir.
   const fallback = agents.find((a) => a.isManager)?.id ?? agents[0]?.id ?? null
   const current =
@@ -63,12 +63,13 @@ function Shell(): React.JSX.Element {
         ) : null}
         {view === 'agents' ? (
           <AgentEditor
-            key={`${current ?? 'yeni'}-${data.settings.activeTeamId}`}
+            key={current ?? 'yeni'}
             agentId={current}
             onSaved={(id) => setSelected(id)}
             onDeleted={() => setSelected(null)}
             onTest={(id) => {
               setSelected(id)
+              setOrchId(null)
               setView('command')
               startRun(
                 id,

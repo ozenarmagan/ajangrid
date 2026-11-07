@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Agent, Orchestration, RunInfo } from '../../../shared/types'
-import { useStore, useTeamAgents } from '../store'
+import { useAgents, useStore } from '../store'
 import { duration, initialOf, timeOf } from '../util'
 
 type Col = 'waiting' | 'running' | 'done' | 'problem'
@@ -93,7 +93,7 @@ function buildCards(
           agent: byId(o.managerId),
           title:
             q.kind === 'team'
-              ? `Ekip önerisi: ${q.proposals?.length ?? 0} yeni ajan`
+              ? `Ajan önerisi: ${q.proposals?.length ?? 0} yeni ajan`
               : short(q.text, 160),
           meta: q.kind === 'limit' ? 'Limit doldu, yanıtını bekliyor' : 'Yanıtını bekliyor',
           goal: o.goal,
@@ -122,19 +122,16 @@ function buildCards(
 }
 
 export function KanbanBoard({
-  teamId,
   onFocusAgent,
   onOpenFlow
 }: {
-  teamId: string
   onFocusAgent: (id: string) => void
   onOpenFlow: () => void
 }): React.JSX.Element {
-  const { orchs, runs } = useStore()
-  const agents = useTeamAgents()
-  const mine = orchs.filter((o) => o.teamId === teamId)
-  const latest = mine[mine.length - 1]
-  const [filter, setFilter] = useState<string>(latest?.id ?? 'all')
+  const { orchs, runs, orchId } = useStore()
+  const agents = useAgents()
+  const mine = orchs
+  const [filter, setFilter] = useState<string>(orchId ?? 'all')
   const effective = filter === 'all' || mine.some((o) => o.id === filter) ? filter : 'all'
   const cards = buildCards(mine, runs, agents, effective)
 
@@ -163,7 +160,7 @@ export function KanbanBoard({
           <option value="all">Tümü (doğrudan görevler dahil)</option>
           {[...mine].reverse().map((o) => (
             <option key={o.id} value={o.id}>
-              {timeOf(o.startedAt)} · {short(o.goal, 70)}
+              {timeOf(o.startedAt)} · {short(o.title || o.goal, 70)}
             </option>
           ))}
         </select>

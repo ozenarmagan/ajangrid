@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   EFFORT_LABELS,
   type Agent,
@@ -6,11 +6,20 @@ import {
   type OrchStep,
   type Orchestration
 } from '../../../shared/types'
-import { Stop } from '../components/Icons'
-import { useActiveTeam, useStore, useTeamAgents } from '../store'
+import { Folder, X } from '../components/Icons'
+import { Composer } from '../components/Composer'
+import { useAgents, useCurrentOrch, useStore } from '../store'
 import { KanbanBoard } from './KanbanBoard'
 import { Schedules } from '../components/Schedules'
 import { cleanError, engineLine, initialOf, timeOf } from '../util'
+
+const dateOf = (ts: number): string =>
+  new Date(ts).toLocaleString('tr-TR', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
 
 const STATUS_TEXT: Record<string, { t: string; c: string; dot: string }> = {
   running: { t: 'Çalışıyor', c: 'var(--green-fg)', dot: '#34d399' },
@@ -158,18 +167,13 @@ function ProposalList({ proposals }: { proposals: AgentProposal[] }): React.JSX.
 }
 
 function QuestionCard({ o }: { o: Orchestration }): React.JSX.Element | null {
-  const [text, setText] = useState('')
   const q = o.question
   if (!q) return null
-  const answer = (approve: boolean): void => {
-    window.api.orch.answer(o.id, { approve, text: text.trim() || undefined })
-    setText('')
-  }
   const title =
     q.kind === 'approval'
       ? 'Onay noktası'
       : q.kind === 'team'
-        ? 'Ekip önerisi'
+        ? 'Yeni ajan önerisi'
         : q.kind === 'limit'
           ? 'Limit doldu'
           : 'Yöneticinin sorusu'
@@ -190,52 +194,105 @@ function QuestionCard({ o }: { o: Orchestration }): React.JSX.Element | null {
       <div style={{ fontWeight: 600, color: 'var(--amber-fg)' }}>{title}</div>
       <div className="pre">{q.text}</div>
       {q.kind === 'team' && q.proposals ? <ProposalList proposals={q.proposals} /> : null}
-      <label htmlFor={`q-${q.id}`} className="sr">
-        Yanıt
-      </label>
-      <textarea
-        id={`q-${q.id}`}
-        className="inp"
-        rows={2}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder={approvalLike ? 'İstersen not ya da düzeltme yaz…' : 'Yanıtını yaz…'}
-      />
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         {approvalLike ? (
-          <>
-            <button className="btn btn-p" onClick={() => answer(true)}>
-              {q.kind === 'team' ? 'Ekibi oluştur, devam et' : 'Onayla, devam et'}
-            </button>
-            <button className="btn" onClick={() => answer(false)} disabled={!text.trim()}>
-              Düzeltme iste
-            </button>
-          </>
+          <button
+            className="btn btn-p"
+            onClick={() => window.api.orch.answer(o.id, { approve: true })}
+          >
+            {q.kind === 'team' ? 'Ajanları oluştur, devam et' : 'Onayla, devam et'}
+          </button>
         ) : (
-          <>
-            <button className="btn btn-p" onClick={() => answer(true)} disabled={!text.trim()}>
-              Yanıtla
-            </button>
-            <button
-              className="btn"
-              onClick={() => (
-                setText(''),
-                window.api.orch.answer(o.id, { approve: true, text: 'Devam et.' })
-              )}
-            >
-              Devam et
-            </button>
-          </>
+          <button
+            className="btn"
+            onClick={() => window.api.orch.answer(o.id, { approve: true, text: 'Devam et.' })}
+          >
+            Devam et
+          </button>
         )}
         <button className="btn btn-danger" onClick={() => window.api.orch.stop(o.id)}>
           Durdur
         </button>
+        <span className="hint">
+          {approvalLike
+            ? 'Düzeltme istersen aşağıdaki kutuya yaz.'
+            : 'Yanıtını aşağıdaki kutuya yaz.'}
+        </span>
       </div>
     </div>
   )
 }
 
 export type ManagerMode = 'flow' | 'kanban'
+
+function GoalView({
+  o,
+  agents,
+  onRestore,
+  onResume
+}: {
+  o: Orchestration
+  agents: Agent[]
+  onRestore: (stepId: string, name: string) => void
+  onResume: () => void
+}): React.JSX.Element {
+  const st = STATUS_TEXT[o.status]
+  return (
+    <section style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 8 }}>
+      <div className="bubble-user" style={{ alignSelf: 'flex-end', maxWidth: '78%' }}>
+        {o.goal}
+      </div>
+      <div className="hint">
+        {dateOf(o.startedAt)} · <span style={{ color: st.c }}>{st.t}</span>
+        {o.checkpoints.length
+          ? ` · onay noktaları: ${o.checkpoints
+              .map((id) => agents.find((a) => a.id === id)?.name)
+              .filter(Boolean)
+              .join(', ')}`
+          : ''}
+      </div>
+      {o.steps.map((s) => (
+        <Step
+          key={s.id}
+          s={s}
+          agents={agents}
+          onRestore={
+            o.status !== 'running' && s.kind === 'task' && s.snap
+              ? () => onRestore(s.id, agents.find((a) => a.id === s.agentId)?.name ?? 'ajan')
+              : undefined
+          }
+        />
+      ))}
+      {o.status === 'waiting' ? <QuestionCard key={o.question?.id} o={o} /> : null}
+      {o.status === 'done' && o.summary ? (
+        <div
+          style={{
+            border: '1px solid rgba(139,92,246,.4)',
+            background: 'rgba(124,58,237,.08)',
+            borderRadius: 14,
+            padding: '12px 14px',
+            maxWidth: '88%'
+          }}
+        >
+          <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--violet-fg)' }}>Sonuç</div>
+          <div className="pre">{o.summary}</div>
+        </div>
+      ) : null}
+      {o.status === 'error' || (o.status === 'stopped' && o.error) ? (
+        <div className="hint" style={{ color: 'var(--red-fg)' }}>
+          {o.error}
+        </div>
+      ) : null}
+      {o.status === 'error' || o.status === 'stopped' ? (
+        <div>
+          <button className="btn btn-sm" onClick={onResume}>
+            ↻ Kaldığı yerden devam et
+          </button>
+        </div>
+      ) : null}
+    </section>
+  )
+}
 
 export function ManagerPanel({
   manager,
@@ -250,53 +307,21 @@ export function ManagerPanel({
   manager: Agent
   onEdit: () => void
 }): React.JSX.Element {
-  const { data, orchs, outputTick, setError } = useStore()
-  const agents = useTeamAgents()
-  const team = useActiveTeam()
-  const [goal, setGoal] = useState('')
+  const { data, orchs, outputTick, setError, setOrchId } = useStore()
+  const agents = useAgents()
+  const o = useCurrentOrch()
+  const [draft, setDraft] = useState('')
   const [showSchedules, setShowSchedules] = useState(false)
-  const [dragOver, setDragOver] = useState(false)
-
-  // Hedef kutusuna dosya ya da bağlantı bırakma: dosyalar ekip klasöründeki kaynak/ altına kopyalanır
-  const onDrop = async (e: React.DragEvent): Promise<void> => {
-    e.preventDefault()
-    setDragOver(false)
-    if (!team) return
-    const paths = [...e.dataTransfer.files].map((f) => window.api.fs.pathForFile(f)).filter(Boolean)
-    const add: string[] = []
-    if (paths.length) {
-      try {
-        const rels = await window.api.fs.import(team.id, paths)
-        if (rels.length) add.push(`Kaynak dosyalar: ${rels.join(', ')}`)
-      } catch (err) {
-        setError(cleanError(err))
-      }
-    } else {
-      const link = (
-        e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain')
-      ).trim()
-      if (link)
-        add.push(
-          link
-            .split(/\r?\n/)
-            .filter((l) => l && !l.startsWith('#'))
-            .join('\n')
-        )
-    }
-    if (add.length) setGoal((g) => (g.trim() ? `${g.trim()}\n${add.join('\n')}` : add.join('\n')))
-  }
+  const [showCps, setShowCps] = useState(false)
+  const [folder, setFolder] = useState<string | null>(null)
   const scroller = useRef<HTMLDivElement>(null)
   const members = agents.filter((a) => !a.isManager)
-  const mine = useMemo(
-    () => orchs.filter((o) => o.teamId === manager.teamId),
-    [orchs, manager.teamId]
-  )
-  const active = mine.find((o) => o.status === 'running' || o.status === 'waiting')
-  const checkpoints = team?.checkpoints ?? []
+  const checkpoints = data?.settings.checkpoints ?? []
+  const activeCount = orchs.filter((x) => x.status === 'running' || x.status === 'waiting').length
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight })
-  }, [mine, outputTick, mode])
+  }, [o, outputTick, mode])
 
   const resume = async (id: string): Promise<void> => {
     try {
@@ -306,7 +331,8 @@ export function ManagerPanel({
     }
   }
 
-  const restoreStep = async (o: Orchestration, stepId: string, name: string): Promise<void> => {
+  const restoreStep = async (stepId: string, name: string): Promise<void> => {
+    if (!o) return
     const ok = window.confirm(
       `Çalışma klasörü, "${name}" görevi başlamadan önceki haline döndürülecek.\n\nBu adımdan sonra oluşan ya da değişen dosyalar geri alınır. Şu anki hal de ayrıca kaydedilir.`
     )
@@ -319,22 +345,71 @@ export function ManagerPanel({
   }
 
   const toggleCheckpoint = (id: string): void => {
-    if (!team) return
     const next = checkpoints.includes(id)
       ? checkpoints.filter((x) => x !== id)
       : [...checkpoints, id]
-    window.api.teams.save({ ...team, checkpoints: next })
+    window.api.settings.set({ checkpoints: next })
   }
 
-  const start = async (): Promise<void> => {
-    if (!team || !goal.trim()) return
+  const pickFolder = async (): Promise<void> => {
+    const dir = await window.api.dialog.pickFolder()
+    if (dir) setFolder(dir)
+  }
+
+  const send = async (text: string, files: string[]): Promise<boolean> => {
     try {
-      await window.api.orch.start(team.id, goal.trim(), checkpoints)
-      setGoal('')
+      if (!o) {
+        const created = await window.api.orch.start(text, {
+          files,
+          workdir: folder ?? undefined
+        })
+        setFolder(null)
+        setShowSchedules(false)
+        setOrchId(created.id)
+      } else {
+        await window.api.orch.message(o.id, text, files)
+      }
+      return true
     } catch (e) {
       setError(cleanError(e))
+      return false
     }
   }
+
+  const q = o?.question
+  const placeholder = !o
+    ? 'Yöneticiye ne yapmak istediğini yaz… Dosya ya da görsel ekleyebilirsin.'
+    : o.status === 'running'
+      ? 'Yönetici çalışıyor… Bitince ya da bir soru sorunca yazabilirsin.'
+      : o.status === 'waiting'
+        ? q?.kind === 'approval' || q?.kind === 'team'
+          ? 'Onaylamak yerine düzeltme istemek için yaz…'
+          : 'Yöneticiye yanıtını yaz…'
+        : 'Bu hedefle ilgili yeni talimat yaz; yönetici aynı klasörde devam eder…'
+  const sendLabel = !o
+    ? 'Başlat'
+    : o.status === 'waiting'
+      ? q?.kind === 'approval' || q?.kind === 'team'
+        ? 'Düzeltme iste'
+        : 'Yanıtla'
+      : 'Devam ettir'
+
+  const cpChips = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+      <span className="hint">Görev vermeden önce onayımı iste:</span>
+      {members.map((a) => (
+        <button
+          key={a.id}
+          className={`chip ${checkpoints.includes(a.id) ? 'on' : ''}`}
+          aria-pressed={checkpoints.includes(a.id)}
+          onClick={() => toggleCheckpoint(a.id)}
+        >
+          {a.name}
+        </button>
+      ))}
+      {!members.length ? <span className="hint">havuzda alt ajan yok</span> : null}
+    </div>
+  )
 
   return (
     <main
@@ -358,24 +433,30 @@ export function ManagerPanel({
           flexWrap: 'wrap'
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
           <span className="avatar" style={{ background: manager.color, width: 34, height: 34 }}>
             {initialOf(manager.name)}
           </span>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <span style={{ fontWeight: 600 }}>
-              {manager.name}
-              {active ? (
-                <span
-                  style={{ fontSize: 12, fontWeight: 400, color: STATUS_TEXT[active.status].c }}
-                >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+            <span
+              style={{
+                fontWeight: 600,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              {o ? o.title : 'Yeni hedef'}
+              {o ? (
+                <span style={{ fontSize: 12, fontWeight: 400, color: STATUS_TEXT[o.status].c }}>
                   {' '}
-                  · {STATUS_TEXT[active.status].t}
+                  · {STATUS_TEXT[o.status].t}
                 </span>
               ) : null}
             </span>
             <span className="hint">
-              {team?.name} · {members.length} alt ajan
+              {manager.name} · havuzda {members.length} alt ajan
+              {activeCount ? ` · ${activeCount} hedef sürüyor` : ''}
             </span>
           </div>
         </div>
@@ -403,22 +484,14 @@ export function ManagerPanel({
             Efor: {EFFORT_LABELS[manager.effort].toLocaleLowerCase('tr')}
           </span>
           <button className="btn btn-sm" onClick={onEdit}>
-            Düzenle
+            Yöneticiyi düzenle
           </button>
-          {active ? (
-            <button
-              className="btn btn-sm btn-danger"
-              onClick={() => window.api.orch.stop(active.id)}
-            >
-              <Stop size={12} /> Durdur
-            </button>
-          ) : null}
         </div>
       </header>
 
-      {mode === 'kanban' && team ? (
+      {mode === 'kanban' ? (
         <KanbanBoard
-          teamId={team.id}
+          key={o?.id ?? 'all'}
           onFocusAgent={onFocusAgent}
           onOpenFlow={() => onMode('flow')}
         />
@@ -428,169 +501,86 @@ export function ManagerPanel({
           className="scroll"
           style={{ flex: 1, padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}
         >
-          {!mine.length ? (
+          {o ? (
+            <GoalView o={o} agents={agents} onRestore={restoreStep} onResume={() => resume(o.id)} />
+          ) : (
             <div
               className="muted"
-              style={{ margin: 'auto', textAlign: 'center', maxWidth: 460, lineHeight: 1.6 }}
+              style={{ margin: 'auto', textAlign: 'center', maxWidth: 480, lineHeight: 1.6 }}
             >
               {members.length
-                ? `Yöneticiye bir hedef ver. Hedefi adımlara böler, ${members.length} alt ajana dağıtır, çıktıları denetler ve işaretlediğin ajanlardan önce onayını ister.`
-                : 'Yöneticiye hedefini yaz. Ekipte uygun ajan yoksa önce bir ekip önerir; onaylarsan ajanlar oluşturulur ve iş başlar.'}
+                ? `Ne yapmak istediğini yaz. Yönetici havuzdaki ${members.length} ajan arasından bu işe uygun olanları seçer, görevleri dağıtır ve çıktıları denetler. Her hedef kendi klasöründe çalışır; birden fazla hedef aynı anda sürebilir.`
+                : 'Ne yapmak istediğini yaz. Havuzda uygun ajan yoksa yönetici önce yeni ajanlar önerir; onaylarsan oluşturulur ve iş başlar.'}
             </div>
-          ) : null}
-          {mine.map((o) => {
-            const st = STATUS_TEXT[o.status]
-            return (
-              <section
-                key={o.id}
-                style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 8 }}
-              >
-                <div className="bubble-user" style={{ alignSelf: 'flex-end', maxWidth: '78%' }}>
-                  {o.goal}
-                </div>
-                <div className="hint">
-                  {timeOf(o.startedAt)} · <span style={{ color: st.c }}>{st.t}</span>
-                  {o.checkpoints.length
-                    ? ` · onay noktaları: ${o.checkpoints
-                        .map((id) => agents.find((a) => a.id === id)?.name)
-                        .filter(Boolean)
-                        .join(', ')}`
-                    : ''}
-                </div>
-                {o.steps.map((s) => (
-                  <Step
-                    key={s.id}
-                    s={s}
-                    agents={agents}
-                    onRestore={
-                      o.status !== 'running' && s.kind === 'task' && s.snap
-                        ? () =>
-                            restoreStep(
-                              o,
-                              s.id,
-                              agents.find((a) => a.id === s.agentId)?.name ?? 'ajan'
-                            )
-                        : undefined
-                    }
-                  />
-                ))}
-                {o.status === 'waiting' ? <QuestionCard key={o.question?.id} o={o} /> : null}
-                {o.status === 'done' && o.summary ? (
-                  <div
-                    style={{
-                      border: '1px solid rgba(139,92,246,.4)',
-                      background: 'rgba(124,58,237,.08)',
-                      borderRadius: 14,
-                      padding: '12px 14px',
-                      maxWidth: '88%'
-                    }}
-                  >
-                    <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--violet-fg)' }}>
-                      Sonuç
-                    </div>
-                    <div className="pre">{o.summary}</div>
-                  </div>
-                ) : null}
-                {o.status === 'error' || (o.status === 'stopped' && o.error) ? (
-                  <div className="hint" style={{ color: 'var(--red-fg)' }}>
-                    {o.error}
-                  </div>
-                ) : null}
-                {(o.status === 'error' || o.status === 'stopped') && !active ? (
-                  <div>
-                    <button className="btn btn-sm" onClick={() => resume(o.id)}>
-                      ↻ Kaldığı yerden devam et
-                    </button>
-                  </div>
-                ) : null}
-              </section>
-            )
-          })}
+          )}
         </div>
       )}
 
       <div style={{ padding: '12px 22px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {showSchedules ? <Schedules goal={goal} onCreated={() => setGoal('')} /> : null}
-        <div
-          onDragOver={(e) => {
-            e.preventDefault()
-            setDragOver(true)
-          }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={onDrop}
-          style={{
-            border: dragOver ? '1px dashed #8b5cf6' : '1px solid var(--w12)',
-            borderRadius: 14,
-            background: 'var(--panel)',
-            padding: '8px 10px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8
-          }}
-        >
-          <label htmlFor="goal" className="sr">
-            Hedef
-          </label>
-          <textarea
-            id="goal"
-            rows={2}
-            className="composer"
-            value={goal}
-            onChange={(e) => setGoal(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault()
-                start()
-              }
-            }}
-            placeholder={
-              active
-                ? 'Süren bir döngü var. Yeni hedefi yazıp zamanlayabilir ya da bitince başlatabilirsin.'
-                : 'Yöneticiye hedef ver… Dosya ya da bağlantıyı buraya sürükleyip bırakabilirsin. (Ctrl/⌘+Enter başlatır)'
-            }
-          />
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 8,
-              flexWrap: 'wrap'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              <span className="hint">Onay iste:</span>
-              {members.map((a) => (
+        {!o && showSchedules ? (
+          <Schedules goal={draft} onCreated={() => setShowSchedules(false)} />
+        ) : null}
+        {showCps ? cpChips : null}
+        <Composer
+          key={o?.id ?? 'yeni'}
+          autoFocus
+          placeholder={placeholder}
+          sendLabel={sendLabel}
+          busy={o?.status === 'running'}
+          onStop={() => o && window.api.orch.stop(o.id)}
+          onSend={send}
+          onError={setError}
+          onTextChange={setDraft}
+          footer={
+            <>
+              {!o ? (
+                folder ? (
+                  <span
+                    className="chip on"
+                    title={folder}
+                    style={{ display: 'inline-flex', gap: 4 }}
+                  >
+                    <Folder /> {folder.split(/[\\/]/).pop()}
+                    <button
+                      className="ib"
+                      style={{ width: 18, height: 18 }}
+                      aria-label="Var olan klasör seçimini kaldır"
+                      onClick={() => setFolder(null)}
+                    >
+                      <X />
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    className="chip"
+                    onClick={pickFolder}
+                    title="Boş bırakırsan bu hedef için yeni bir klasör açılır"
+                  >
+                    <Folder /> Klasör: yeni
+                  </button>
+                )
+              ) : null}
+              <button
+                className={`chip ${showCps || checkpoints.length ? 'on' : ''}`}
+                aria-expanded={showCps}
+                onClick={() => setShowCps(!showCps)}
+                title="Hangi ajanlara görev verilmeden önce onayın istensin"
+              >
+                Onay noktaları{checkpoints.length ? ` (${checkpoints.length})` : ''}
+              </button>
+              {!o ? (
                 <button
-                  key={a.id}
-                  className={`chip ${checkpoints.includes(a.id) ? 'on' : ''}`}
-                  aria-pressed={checkpoints.includes(a.id)}
-                  onClick={() => toggleCheckpoint(a.id)}
+                  className={`chip ${showSchedules ? 'on' : ''}`}
+                  aria-pressed={showSchedules}
+                  onClick={() => setShowSchedules(!showSchedules)}
+                  title="Bu hedefi belirli gün ve saatlerde otomatik başlat"
                 >
-                  {a.name}
+                  Zamanla
                 </button>
-              ))}
-              {!members.length ? <span className="hint">alt ajan yok</span> : null}
-            </div>
-            <span style={{ display: 'flex', gap: 6 }}>
-              <button
-                className={`btn ${showSchedules ? 'btn-p' : ''}`}
-                onClick={() => setShowSchedules(!showSchedules)}
-                aria-pressed={showSchedules}
-                title="Bu hedefi belirli gün ve saatlerde otomatik başlat"
-              >
-                Zamanla
-              </button>
-              <button
-                className="btn btn-p"
-                onClick={start}
-                disabled={!goal.trim() || Boolean(active)}
-              >
-                Başlat
-              </button>
-            </span>
-          </div>
-        </div>
+              ) : null}
+            </>
+          }
+        />
       </div>
     </main>
   )

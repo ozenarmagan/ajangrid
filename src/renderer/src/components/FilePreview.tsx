@@ -15,22 +15,22 @@ function previewKind(name: string): 'image' | 'video' | 'audio' | 'text' | 'none
   return 'none'
 }
 
-function fileUrl(teamId: string, rel: string): string {
-  return `ajfile://${teamId}/${rel.split('/').map(encodeURIComponent).join('/')}`
+function fileUrl(orchId: string, rel: string): string {
+  return `ajfile://${orchId}/${rel.split('/').map(encodeURIComponent).join('/')}`
 }
 
 /** Uygulama içinde dosya önizleme penceresi (metin, görsel, video, ses). */
 export function FilePreview({
-  teamId,
+  orchId,
   rel,
   onClose
 }: {
-  teamId: string
+  orchId: string
   rel: string
   onClose: () => void
 }): React.JSX.Element {
   const kind = previewKind(rel)
-  const url = fileUrl(teamId, rel)
+  const url = fileUrl(orchId, rel)
   const [text, setText] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
@@ -111,7 +111,7 @@ export function FilePreview({
           >
             {rel}
           </span>
-          <button className="btn btn-sm" onClick={() => window.api.fs.open(teamId, rel)}>
+          <button className="btn btn-sm" onClick={() => window.api.fs.open(orchId, rel)}>
             Uygulamada aç
           </button>
           <button className="btn btn-sm" onClick={onClose} autoFocus>

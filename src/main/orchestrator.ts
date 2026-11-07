@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'fs'
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from 'fs'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
 import type {
@@ -16,10 +24,11 @@ import type {
   OrchStep,
   Orchestration,
   RunInfo,
-  Team
+  StartGoalOptions
 } from '../shared/types'
 import { API_LABELS, CLI_LABELS } from '../shared/types'
-import { loadData, newId, update } from './store'
+import { goalsDir, loadData, newId, titleOf, update, workRoot } from './store'
+import { attachNote, copyInto, newGoalDir } from './files'
 import { detectClis } from './engines/detect'
 import { apiKeyStatuses } from './secrets'
 import { restore, snapshot } from './snapshots'
@@ -154,7 +163,7 @@ function listFiles(dir: string): string[] {
 export class Orchestrator {
   private orchs = new Map<string, Orchestration>()
   private parseFails = new Map<string, number>()
-  private loadedTeams = new Set<string>()
+  private loaded = false
   private hooks: Hook[] = []
 
   /** Bildirim ve Telegram gibi dış kanallar için olay dinleyicisi. */
@@ -192,41 +201,35 @@ export class Orchestrator {
     private onDataChanged: () => void
   ) {}
 
-  private file(o: Orchestration): string | null {
-    const team = loadData().teams.find((t) => t.id === o.teamId)
-    if (!team) return null
-    const dir = join(team.workdir, '.ajangrid', 'yonetici')
-    mkdirSync(dir, { recursive: true })
-    return join(dir, `${o.id}.json`)
+  private file(o: Orchestration): string {
+    mkdirSync(goalsDir(), { recursive: true })
+    return join(goalsDir(), `${o.id}.json`)
   }
 
   private emit(o: Orchestration): void {
-    const f = this.file(o)
-    if (f) {
-      try {
-        writeFileSync(f, JSON.stringify(o, null, 2), 'utf8')
-      } catch {
-        /* kayıt yazılamazsa akışı bozma */
-      }
+    try {
+      writeFileSync(this.file(o), JSON.stringify(o, null, 2), 'utf8')
+    } catch {
+      /* kayıt yazılamazsa akışı bozma */
     }
     this.send('orch:update', structuredClone(o))
   }
 
-  /** Bir ekibin eski döngülerini diskten yükler (uygulama yeniden açıldığında). */
-  list(teamId: string): Orchestration[] {
-    if (!this.loadedTeams.has(teamId)) {
-      this.loadedTeams.add(teamId)
-      const team = loadData().teams.find((t) => t.id === teamId)
-      const dir = team ? join(team.workdir, '.ajangrid', 'yonetici') : null
-      if (dir && existsSync(dir)) {
+  /** Tüm hedefler (ilk çağrıda diskten yüklenir). */
+  list(): Orchestration[] {
+    if (!this.loaded) {
+      this.loaded = true
+      const dir = goalsDir()
+      if (existsSync(dir)) {
         for (const n of readdirSync(dir).filter((x) => x.endsWith('.json'))) {
           try {
             const o = JSON.parse(readFileSync(join(dir, n), 'utf8')) as Orchestration
-            if (this.orchs.has(o.id)) continue
+            if (this.orchs.has(o.id) || !o.workdir) continue
             if (o.status === 'running' || o.status === 'waiting') {
               o.status = 'stopped'
               o.error = 'Uygulama kapandığında yarım kaldı.'
             }
+            o.title = o.title || titleOf(o.goal)
             this.orchs.set(o.id, o)
           } catch {
             /* bozuk kayıt */
@@ -234,32 +237,63 @@ export class Orchestrator {
         }
       }
     }
-    return [...this.orchs.values()]
-      .filter((o) => o.teamId === teamId)
-      .sort((a, b) => a.startedAt - b.startedAt)
+    return [...this.orchs.values()].sort((a, b) => a.startedAt - b.startedAt)
   }
 
-  start(teamId: string, goal: string, checkpoints?: string[]): Orchestration {
+  start(goal: string, opts: StartGoalOptions = {}): Orchestration {
+    this.list()
     const data = loadData()
-    const team = data.teams.find((t) => t.id === teamId)
-    if (!team) throw new Error('Ekip bulunamadı.')
-    const manager = data.agents.find((a) => a.teamId === teamId && a.isManager)
+    const manager = data.agents.find((a) => a.isManager)
     if (!manager)
-      throw new Error('Bu ekipte yönetici yok. Bir ajanı "Bu ekibin yöneticisi" olarak işaretle.')
+      throw new Error('Yönetici yok. Ajanlar ekranında bir ajanı "Yönetici" olarak işaretle.')
+    const workdir =
+      opts.workdir && opts.workdir.trim() ? opts.workdir : newGoalDir(workRoot(data), goal)
+    mkdirSync(workdir, { recursive: true })
+    const rel = copyInto(workdir, opts.files)
     const o: Orchestration = {
       id: newId(),
-      teamId,
       managerId: manager.id,
-      goal,
+      title: titleOf(goal),
+      goal: goal + attachNote(rel),
+      workdir,
       status: 'running',
       steps: [],
-      checkpoints: checkpoints ?? team.checkpoints ?? [],
+      checkpoints: data.settings.checkpoints ?? [],
       startedAt: Date.now()
     }
     this.orchs.set(o.id, o)
     this.emit(o)
     void this.loop(o)
     return structuredClone(o)
+  }
+
+  /**
+   * Hedefin sohbetine yazılan mesaj: yanıt bekleniyorsa yanıt olur,
+   * hedef bitmiş/durmuşsa yeni talimatla kaldığı yerden devam eder.
+   */
+  message(id: string, text: string, files: string[] = []): void {
+    const o = this.orchs.get(id)
+    if (!o) throw new Error('Hedef bulunamadı.')
+    if (o.status === 'running')
+      throw new Error('Yönetici şu an çalışıyor; bitmesini bekle ya da durdur.')
+    const rel = copyInto(o.workdir, files)
+    const body = (text.trim() + attachNote(rel)).trim()
+    if (!body) return
+    if (o.status === 'waiting') return this.answer(id, { text: body })
+    this.resume(id, body)
+  }
+
+  /** Hedef kaydını siler (klasördeki dosyalara dokunmaz). */
+  remove(id: string): void {
+    const o = this.orchs.get(id)
+    if (!o) return
+    this.stop(id)
+    this.orchs.delete(id)
+    try {
+      rmSync(this.file(o), { force: true })
+    } catch {
+      /* yoksay */
+    }
   }
 
   stop(id: string): void {
@@ -275,6 +309,10 @@ export class Orchestrator {
   answer(id: string, ans: OrchAnswer): void {
     const o = this.orchs.get(id)
     if (!o || o.status !== 'waiting' || !o.question) return
+    if (ans.files?.length) {
+      const rel = copyInto(o.workdir, ans.files)
+      ans = { ...ans, text: ((ans.text ?? '') + attachNote(rel)).trim() }
+    }
     const q = o.question
     o.question = undefined
     o.status = 'running'
@@ -290,10 +328,10 @@ export class Orchestrator {
       return
     }
     if (q.kind === 'team' && ans.approve && q.proposals) {
-      const names = this.createAgents(o, q.proposals)
+      const names = this.createAgents(q.proposals)
       this.addStep(o, {
         kind: 'user',
-        text: ans.text ? `Ekip onaylandı. Not: ${ans.text}` : 'Ekip onaylandı.'
+        text: ans.text ? `Yeni ajanlar onaylandı. Not: ${ans.text}` : 'Yeni ajanlar onaylandı.'
       })
       this.addStep(o, { kind: 'note', text: `Oluşturulan ajanlar: ${names.join(', ')}` })
       this.emit(o)
@@ -304,7 +342,7 @@ export class Orchestrator {
     if (q.kind === 'team') {
       this.addStep(o, {
         kind: 'user',
-        text: `Ekip önerisi onaylanmadı.${text ? ' Düzeltme: ' + text : ''}`
+        text: `Ajan önerisi onaylanmadı.${text ? ' Düzeltme: ' + text : ''}`
       })
       this.emit(o)
       void this.loop(o)
@@ -338,12 +376,16 @@ export class Orchestrator {
   }
 
   /** Durmuş ya da hata vermiş bir döngüyü kaldığı yerden sürdürür. */
-  resume(id: string): void {
+  resume(id: string, instruction?: string): void {
     const o = this.orchs.get(id)
     if (!o || o.status === 'running' || o.status === 'waiting') return
-    if (this.active().some((x) => x.teamId === o.teamId)) {
-      throw new Error('Bu ekipte süren başka bir döngü var.')
+    if (o.status === 'done' && o.summary) {
+      this.addStep(o, {
+        kind: 'note',
+        text: `Hedef daha önce tamamlanmıştı. Sonuç özeti: ${o.summary}`
+      })
     }
+    o.summary = undefined
     for (const s of o.steps) {
       if (s.status === 'running') {
         s.status = 'stopped'
@@ -356,10 +398,14 @@ export class Orchestrator {
     o.question = undefined
     o.turnOffset = o.steps.filter((s) => s.kind === 'manager').length
     this.parseFails.set(o.id, 0)
-    this.addStep(o, {
-      kind: 'note',
-      text: 'Kaldığı yerden devam ediliyor. Yarıda kalan adımların çıktıları eksik olabilir; klasördeki dosyaları kontrol et.'
-    })
+    if (instruction) {
+      this.addStep(o, { kind: 'user', text: instruction })
+    } else {
+      this.addStep(o, {
+        kind: 'note',
+        text: 'Kaldığı yerden devam ediliyor. Yarıda kalan adımların çıktıları eksik olabilir; klasördeki dosyaları kontrol et.'
+      })
+    }
     this.emit(o)
     void this.loop(o)
   }
@@ -371,10 +417,8 @@ export class Orchestrator {
     if (o.status === 'running') throw new Error('Önce döngüyü durdur ya da bitmesini bekle.')
     const step = o.steps.find((s) => s.id === stepId)
     if (!step?.snap) throw new Error('Bu adım için anlık görüntü yok.')
-    const team = loadData().teams.find((t) => t.id === o.teamId)
-    if (!team) throw new Error('Ekip bulunamadı.')
     const agentName = loadData().agents.find((a) => a.id === step.agentId)?.name ?? 'ajan'
-    await restore(team.workdir, step.snap)
+    await restore(o.workdir, step.snap)
     this.addStep(o, {
       kind: 'note',
       text: `Klasör, "${agentName}" adımından önceki haline döndürüldü. (Geri almadan önceki hal de kaydedildi.)`
@@ -412,11 +456,10 @@ export class Orchestrator {
   private buildPrompt(
     o: Orchestration,
     data: AppData,
-    team: Team,
     eng: EngineInfo,
     correction?: string
   ): string {
-    const members = data.agents.filter((a) => a.teamId === o.teamId && !a.isManager)
+    const members = data.agents.filter((a) => !a.isManager)
     const names = (ids: string[]): string =>
       ids
         .map((id) => data.agents.find((a) => a.id === id)?.name)
@@ -435,23 +478,23 @@ export class Orchestrator {
         return `${n}. [Senin önceki değerlendirmen] ${s.text}`
       })
       .join('\n\n')
-    const files = listFiles(team.workdir)
+    const files = listFiles(o.workdir)
 
     return [
-      `Sen "${team.name}" ekibinin yöneticisisin. Kullanıcının hedefini, ekibindeki ajanlara iş vererek tamamlamalısın.`,
-      'İşi kendin yapma: her adımı en uygun ajana ver, çıktısını değerlendir, yetersizse aynı ajana somut düzeltme görevi ver.',
+      'Sen yöneticisin. Kullanıcının hedefini, aşağıdaki ajan havuzundan bu işe uygun olanları seçip onlara iş vererek tamamlamalısın.',
+      'İşi kendin yapma: her adımı en uygun ajana ver, çıktısını değerlendir, yetersizse aynı ajana somut düzeltme görevi ver. Hedefle ilgisi olmayan ajanları kullanma.',
       '',
       '## Hedef',
       o.goal,
       '',
-      '## Ekip',
+      '## Ajan havuzu',
       ...(members.length
         ? members.map((a) => `- ${a.name}: ${a.title || '(unvan yok)'} — ${engineText(a, data)}`)
-        : ['(henüz alt ajan yok: önce create_agents ile bu hedefe uygun bir ekip öner)']),
+        : ['(henüz alt ajan yok: önce create_agents ile bu hedefe uygun ajanlar öner)']),
       '',
       ...this.engineSection(data, eng),
-      '## Ortak çalışma klasörü',
-      `${team.workdir}`,
+      '## Bu hedefin çalışma klasörü',
+      `${o.workdir}`,
       'Ajanlar dosyaları bu klasörde okur ve yazar. Görev verirken okunacak ve yazılacak dosya adlarını açıkça belirt (ör. "ozet.md dosyasını oku, senaryo.md dosyasına yaz").',
       'API ajanları dosya yazamaz; yanıtları otomatik olarak outputs/ klasörüne kaydedilir.',
       'Ajanlar birbirini görmez; her görev tek başına anlaşılır olmalı. İstisna: Claude Code ajanları bu hedef boyunca kendi önceki görevlerini hatırlar, onlardan düzeltme isterken yalnızca değişecek kısmı söylemen yeterli.',
@@ -469,7 +512,7 @@ export class Orchestrator {
       '{"action":"assign_parallel","assignments":[{"agent":"<ad>","task":"<görev>"}]}   ← yalnızca birbirinden bağımsız işler için',
       '{"action":"ask_user","question":"<kullanıcıya soru>"}   ← yalnızca gerçekten gerekliyse',
       '{"action":"create_agents","agents":[{"name":"<kısa ad>","title":"<ne yapar, tek cümle>","role":"<ayrıntılı talimat>","engine":"cli|api|local","cli":"claude|codex|antigravity","apiProvider":"anthropic|openai|google|openrouter","localTool":"<yerel araç adı>","model":"<model>","effort":"low|medium|high|xhigh|max","permissions":{"write":true,"shell":false,"network":false}}]}',
-      '   ← ekipte bu iş için uygun ajan yoksa; kullanıcı onaylayınca oluşturulur. Gereken en az izni ver, ağır işler dışında düşük/orta efor seç.',
+      '   ← havuzda bu iş için uygun ajan yoksa; kullanıcı onaylayınca oluşturulur. Gereken en az izni ver, ağır işler dışında düşük/orta efor seç.',
       '{"action":"finish","summary":"<kullanıcıya sonuç özeti; üretilen dosyaları belirt>"}',
       correction ? `\nÖNEMLİ: ${correction}` : ''
     ]
@@ -477,16 +520,10 @@ export class Orchestrator {
       .join('\n')
   }
 
-  private resolveAgent(
-    data: AppData,
-    o: Orchestration,
-    name: string | undefined
-  ): Agent | undefined {
+  private resolveAgent(data: AppData, name: string | undefined): Agent | undefined {
     if (!name) return undefined
     const norm = (s: string): string => s.toLocaleLowerCase('tr').replace(/\s+/g, '')
-    return data.agents.find(
-      (a) => a.teamId === o.teamId && !a.isManager && (norm(a.name) === norm(name) || a.id === name)
-    )
+    return data.agents.find((a) => !a.isManager && (norm(a.name) === norm(name) || a.id === name))
   }
 
   private async loop(o: Orchestration, correction?: string): Promise<void> {
@@ -501,9 +538,10 @@ export class Orchestrator {
     const max = loadData().settings.maxOrchestrationSteps ?? DEFAULT_MAX_STEPS
     while (this.alive(o)) {
       const data = loadData()
-      const team = data.teams.find((t) => t.id === o.teamId)
-      const manager = data.agents.find((a) => a.id === o.managerId)
-      if (!team || !manager) return this.fail(o, 'Ekip ya da yönetici silinmiş.')
+      const manager =
+        data.agents.find((a) => a.id === o.managerId) ?? data.agents.find((a) => a.isManager)
+      if (!manager) return this.fail(o, 'Yönetici silinmiş. Bir ajanı yönetici olarak işaretle.')
+      o.managerId = manager.id
       const managerTurns = o.steps.filter((s) => s.kind === 'manager').length - (o.turnOffset ?? 0)
       if (managerTurns >= max) {
         return this.fail(
@@ -516,14 +554,10 @@ export class Orchestrator {
       const step = this.addStep(o, { kind: 'manager', agentId: manager.id, status: 'running' })
       this.emit(o)
       const eng: EngineInfo = { clis: await detectClis().catch(() => []), keys: apiKeyStatuses() }
-      const run = await this.runs.start(
-        data,
-        manager,
-        this.buildPrompt(o, data, team, eng, correction),
-        {
-          orchId: o.id
-        }
-      )
+      const run = await this.runs.start(data, manager, this.buildPrompt(o, data, eng, correction), {
+        orchId: o.id,
+        workdir: o.workdir
+      })
       step.runId = run.id
       this.emit(o)
       const done = await this.runs.waitFor(run.id)
@@ -575,9 +609,9 @@ export class Orchestrator {
       }
       if (action.action === 'create_agents') {
         const eng: EngineInfo = { clis: await detectClis().catch(() => []), keys: apiKeyStatuses() }
-        const proposals = this.normalizeProposals(data, o, action.agents ?? [], eng)
+        const proposals = this.normalizeProposals(data, action.agents ?? [], eng)
         if (!proposals.length) {
-          this.addStep(o, { kind: 'note', text: 'Ekip önerisi boş ya da geçersizdi.' })
+          this.addStep(o, { kind: 'note', text: 'Ajan önerisi boş ya da geçersizdi.' })
           this.emit(o)
           correction =
             'create_agents listesi boş ya da geçersizdi. Her ajan için en az name, engine ve role ver.'
@@ -585,7 +619,7 @@ export class Orchestrator {
         }
         return this.ask(o, {
           kind: 'team',
-          text: `Yönetici ${proposals.length} yeni ajan oluşturmak istiyor. İncele; onaylarsan oluşturulur ve iş devam eder.`,
+          text: `Yönetici havuza ${proposals.length} yeni ajan eklemek istiyor. İncele; onaylarsan oluşturulur ve iş devam eder.`,
           proposals
         })
       }
@@ -602,14 +636,12 @@ export class Orchestrator {
       const assignments: Assignment[] = []
       const unknown: string[] = []
       for (const r of raw) {
-        const ag = this.resolveAgent(data, o, r.agent)
+        const ag = this.resolveAgent(data, r.agent)
         if (!ag || !r.task?.trim()) unknown.push(r.agent || '(boş)')
         else assignments.push({ agentId: ag.id, task: r.task.trim() })
       }
       if (unknown.length || !assignments.length) {
-        const names = data.agents
-          .filter((a) => a.teamId === o.teamId && !a.isManager)
-          .map((a) => a.name)
+        const names = data.agents.filter((a) => !a.isManager).map((a) => a.name)
         this.addStep(o, {
           kind: 'note',
           text: `Geçersiz görevlendirme: ${unknown.join(', ') || 'görev yok'}.`
@@ -634,15 +666,8 @@ export class Orchestrator {
     }
   }
 
-  private normalizeProposals(
-    data: AppData,
-    o: Orchestration,
-    raw: RawProposal[],
-    eng: EngineInfo
-  ): AgentProposal[] {
-    const existing = new Set(
-      data.agents.filter((a) => a.teamId === o.teamId).map((a) => a.name.toLocaleLowerCase('tr'))
-    )
+  private normalizeProposals(data: AppData, raw: RawProposal[], eng: EngineInfo): AgentProposal[] {
+    const existing = new Set(data.agents.map((a) => a.name.toLocaleLowerCase('tr')))
     const out: AgentProposal[] = []
     for (const r of raw.slice(0, MAX_PROPOSALS)) {
       const name = (r.name ?? '').trim().slice(0, 40)
@@ -698,17 +723,16 @@ export class Orchestrator {
     return out
   }
 
-  private createAgents(o: Orchestration, proposals: AgentProposal[]): string[] {
+  private createAgents(proposals: AgentProposal[]): string[] {
     const names: string[] = []
     update((d) => {
-      let i = d.agents.filter((a) => a.teamId === o.teamId).length
+      let i = d.agents.length
       for (const p of proposals) {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { warnings, ...rest } = p
         d.agents.push({
           ...rest,
           id: newId(),
-          teamId: o.teamId,
           isManager: false,
           color: COLORS[i++ % COLORS.length],
           createdAt: Date.now() + i
@@ -733,12 +757,11 @@ export class Orchestrator {
     approved: boolean
   ): Promise<void> {
     const data = loadData()
-    const team = data.teams.find((t) => t.id === o.teamId)
     // Görevlerden önce klasörün anlık görüntüsü: adım geri alınabilsin
     const names = assignments
       .map((a) => data.agents.find((x) => x.id === a.agentId)?.name ?? '?')
       .join(', ')
-    const snap = team ? await snapshot(team.workdir, `Adım öncesi: ${names}`) : null
+    const snap = await snapshot(o.workdir, `Adım öncesi: ${names}`)
     o.sessions = o.sessions ?? {}
     const usedSession = new Set<string>()
     const steps = assignments.map((a) =>
@@ -766,7 +789,11 @@ export class Orchestrator {
             ? { sessionId: existing, resume: true }
             : { sessionId: randomUUID(), resume: false }
         }
-        const r = await this.runs.start(data, agent, a.task, { orchId: o.id, ...session })
+        const r = await this.runs.start(data, agent, a.task, {
+          orchId: o.id,
+          workdir: o.workdir,
+          ...session
+        })
         steps[i].runId = r.id
         this.emit(o)
         const done = await this.runs.waitFor(r.id)

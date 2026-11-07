@@ -6,7 +6,7 @@ import { buildCliPlan, ROLE_FILE_PLACEHOLDER } from './engines/cli'
 import { resolveCliPath } from './engines/detect'
 import { apiCommandLine, runApi } from './engines/api'
 import { getApiKey } from './secrets'
-import { loadData, newId } from './store'
+import { loadData, newId, workRoot } from './store'
 import { apiCostToday, costOf, looksLikeLimit, recordApi, recordCli } from './usage'
 import { quoteArg, quoteWin } from './shellEnv'
 
@@ -25,6 +25,8 @@ interface Live {
 
 export interface StartOptions {
   orchId?: string
+  /** Hedefin çalışma klasörü (ajanın kendi klasörü yoksa kullanılır) */
+  workdir?: string
   via?: string
   /** Claude Code oturumu: aynı hedefte bağlamı korumak için */
   sessionId?: string
@@ -49,9 +51,13 @@ function stamp(): string {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
 }
 
-export function resolveWorkdir(data: AppData, agent: Agent): string {
-  const team = data.teams.find((t) => t.id === agent.teamId)
-  return (agent.workdir && agent.workdir.trim()) || team?.workdir || process.cwd()
+/** Hedef dışında (elle) çalıştırılan ajanların klasörü */
+export function freeWorkdir(data: AppData): string {
+  return join(workRoot(data), 'serbest')
+}
+
+export function resolveWorkdir(data: AppData, agent: Agent, fallback?: string): string {
+  return (agent.workdir && agent.workdir.trim()) || fallback || freeWorkdir(data)
 }
 
 export class RunManager {
@@ -133,7 +139,11 @@ export class RunManager {
         model: fb.model
       }
       const via = `Limit doldu → API yedeği: ${fb.apiProvider} · ${fb.model}`
-      const pending = this.start(data, clone, info.prompt, { orchId: info.orchId, via })
+      const pending = this.start(data, clone, info.prompt, {
+        orchId: info.orchId,
+        workdir: info.workdir,
+        via
+      })
       pending.then((r) => {
         info.replacedBy = r.id
         this.send('run:update', { ...info })
@@ -157,6 +167,7 @@ export class RunManager {
         const agent = loadData().agents.find((a) => a.id === live.agent.id) ?? live.agent
         const r = await this.start(loadData(), agent, info.prompt, {
           orchId: info.orchId,
+          workdir: info.workdir,
           via: 'Limit sonrası yeniden deneme'
         })
         info.replacedBy = r.id
@@ -184,7 +195,7 @@ export class RunManager {
     prompt: string,
     opts: StartOptions = {}
   ): Promise<RunInfo> {
-    const workdir = resolveWorkdir(data, agent)
+    const workdir = resolveWorkdir(data, agent, opts.workdir)
     const metaDir = join(workdir, '.ajangrid')
     const runsDir = join(metaDir, 'runs')
     mkdirSync(runsDir, { recursive: true })
@@ -193,7 +204,6 @@ export class RunManager {
     const info: RunInfo = {
       id: newId(),
       agentId: agent.id,
-      teamId: agent.teamId,
       prompt,
       status: 'running',
       commandLine: '',
@@ -459,11 +469,6 @@ export class RunManager {
     for (const t of this.timers) clearTimeout(t)
     this.timers.clear()
     for (const id of this.runs.keys()) this.stop(id)
-  }
-
-  /** Bir ekibe ait süren tüm çalışmaları durdur. */
-  stopTeam(teamId: string): void {
-    for (const r of this.runs.values()) if (r.info.teamId === teamId) this.stop(r.info.id)
   }
 
   /** Belirli bir yönetici döngüsüne ait süren çalışmaları durdur. */

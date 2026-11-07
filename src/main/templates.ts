@@ -1,4 +1,4 @@
-import type { Agent, AppData, LocalTool, Team } from '../shared/types'
+import type { Agent, AppData, LocalTool } from '../shared/types'
 import { newId } from './store'
 
 export interface TeamTemplate {
@@ -13,11 +13,6 @@ export const TEMPLATES: TeamTemplate[] = [
     name: 'Blog → Video',
     description:
       'Blog yazısını özetler, senaryoya çevirir, Hyperframes ile sahneleri üretir, seslendirir ve montajlar.'
-  },
-  {
-    id: 'empty',
-    name: 'Boş ekip',
-    description: 'Yalnızca bir yönetici ile başlar.'
   }
 ]
 
@@ -27,47 +22,25 @@ const perms = (write: boolean, shell: boolean, network = false): Agent['permissi
   network
 })
 
-/** Şablondan ekip, ajanlar ve gerekirse yerel araç oluşturur (veriyi yerinde değiştirir). */
-export function applyTemplate(
-  data: AppData,
-  templateId: string,
-  name: string,
-  workdir: string
-): Team {
-  const team: Team = { id: newId(), name, workdir, checkpoints: [] }
+/** Şablondaki ajanları havuza ekler (veriyi yerinde değiştirir); eklenen adları döner. */
+export function applyTemplate(data: AppData, templateId: string): string[] {
+  if (templateId !== 'blog-video') return []
   const now = Date.now()
   let order = 0
-  const agent = (a: Omit<Agent, 'id' | 'teamId' | 'createdAt'>): Agent => ({
+  const agent = (a: Omit<Agent, 'id' | 'createdAt'>): Agent => ({
     ...a,
     id: newId(),
-    teamId: team.id,
     createdAt: now + order++
   })
 
-  const manager = agent({
-    name: 'Yönetici',
-    title: 'Hedefi adımlara böler, ajanlara dağıtır, çıktıları denetler',
-    role: 'Sen bu ekibin yöneticisisin. Kalite çıtan yüksek olsun: bir çıktı hedefe uymuyorsa somut gerekçeyle düzeltme iste. Gereksiz adım ekleme.',
-    isManager: true,
-    color: '#c4b5fd',
-    engine: 'cli',
-    cli: 'claude',
-    model: 'opus',
-    effort: 'high',
-    permissions: perms(false, false)
-  })
-  data.teams.push(team)
-  data.agents.push(manager)
-  if (templateId !== 'blog-video') return team
-
-  const tts: LocalTool = {
+  const tts: LocalTool = data.localTools.find((t) => t.name === 'Seslendirme (TTS)') ?? {
     id: newId(),
     name: 'Seslendirme (TTS)',
     template:
       'echo "Seslendirme komutunu Motorlar ekranında tanımla. Örnek: tts --file {prompt_file} --out {out_dir}/ses.wav" && exit 1',
     note: 'Kendi yerel seslendirme modelinin komutunu yaz. {prompt_file} seslendirilecek metni içerir.'
   }
-  data.localTools.push(tts)
+  if (!data.localTools.includes(tts)) data.localTools.push(tts)
 
   const members: Agent[] = [
     agent({
@@ -132,8 +105,14 @@ export function applyTemplate(
       permissions: perms(true, true)
     })
   ]
+  // Aynı adlı ajan varsa adın sonuna şablon adı eklenir
+  const used = new Set(data.agents.map((a) => a.name.toLocaleLowerCase('tr')))
+  for (const m of members) {
+    if (used.has(m.name.toLocaleLowerCase('tr'))) m.name = `${m.name} (video)`
+    used.add(m.name.toLocaleLowerCase('tr'))
+  }
   data.agents.push(...members)
   // Seslendirmeden önce senaryo onayı
-  team.checkpoints = [members[3].id]
-  return team
+  data.settings.checkpoints = [...(data.settings.checkpoints ?? []), members[3].id]
+  return members.map((m) => m.name)
 }

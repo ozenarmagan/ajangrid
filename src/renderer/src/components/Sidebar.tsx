@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import type { Theme } from '../../../shared/types'
-import { useActiveTeam, useStore, useTeamAgents } from '../store'
+import type { Orchestration, Theme } from '../../../shared/types'
+import { useAgents, useStore } from '../store'
 import { agentState, cleanError, engineLine, initialOf } from '../util'
-import { Download, Logo, Moon, Pencil, Plus, Sun, Trash } from './Icons'
+import { Download, Logo, Moon, Plus, Sun, Trash, Upload } from './Icons'
 
 export type View = 'command' | 'agents' | 'engines' | 'help'
 
@@ -12,6 +12,29 @@ const NAV: Array<{ id: View; label: string }> = [
   { id: 'engines', label: 'Motorlar ve Limitler' },
   { id: 'help', label: 'Kullanım Kılavuzu' }
 ]
+
+const DOT: Record<Orchestration['status'], string> = {
+  running: '#34d399',
+  waiting: '#fbbf24',
+  done: '#a78bfa',
+  error: '#f87171',
+  stopped: '#71717a'
+}
+const STATUS: Record<Orchestration['status'], string> = {
+  running: 'çalışıyor',
+  waiting: 'yanıt bekliyor',
+  done: 'tamamlandı',
+  error: 'hata',
+  stopped: 'durduruldu'
+}
+
+function dayOf(ts: number): string {
+  const d = new Date(ts)
+  const today = new Date()
+  if (d.toDateString() === today.toDateString())
+    return d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+  return d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })
+}
 
 interface Props {
   view: View
@@ -28,74 +51,57 @@ export function Sidebar({
   onSelectAgent,
   onNewAgent
 }: Props): React.JSX.Element {
-  const { data, runs, setError } = useStore()
-  const agents = useTeamAgents()
-  const team = useActiveTeam()
-  const [addingTeam, setAddingTeam] = useState(false)
-  const [teamName, setTeamName] = useState('')
-  const [templateId, setTemplateId] = useState('blog-video')
+  const { data, runs, setError, orchs, orchId, setOrchId, dropOrch } = useStore()
+  const agents = useAgents()
+  const [packMenu, setPackMenu] = useState(false)
   const theme: Theme = data?.settings.theme ?? 'dark'
+  const goals = orchs.slice().sort((a, b) => b.startedAt - a.startedAt)
 
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editName, setEditName] = useState('')
-
-  const startRename = (id: string, name: string): void => {
-    setEditingId(id)
-    setEditName(name)
+  const openGoal = (id: string | null): void => {
+    setOrchId(id)
+    setView('command')
   }
 
-  const saveRename = async (id: string): Promise<void> => {
-    const t = data?.teams.find((x) => x.id === id)
-    if (!t || !editName.trim()) return
-    await window.api.teams.save({ ...t, name: editName.trim() })
-    setEditingId(null)
-  }
-
-  const removeTeam = async (id: string, name: string): Promise<void> => {
-    const n = data?.agents.filter((a) => a.teamId === id).length ?? 0
+  const removeGoal = async (o: Orchestration): Promise<void> => {
     const ok = window.confirm(
-      `"${name}" ekibi ve ${n} ajanı silinsin mi?\n\nSüren işler durdurulur. Çalışma klasöründeki dosyalar silinmez.`
+      `"${o.title}" hedefi listeden silinsin mi?\n\nSürüyorsa durdurulur. Klasördeki dosyalar silinmez:\n${o.workdir}`
     )
     if (!ok) return
     try {
-      await window.api.teams.remove(id)
+      await window.api.orch.remove(o.id)
+      dropOrch(o.id)
     } catch (e) {
       setError(cleanError(e))
     }
   }
 
-  const exportTeam = async (id: string): Promise<void> => {
+  const run = async (fn: () => Promise<unknown>): Promise<void> => {
+    setPackMenu(false)
     try {
-      await window.api.teams.exportTeam(id)
+      await fn()
     } catch (e) {
       setError(cleanError(e))
     }
   }
 
-  const importTeam = async (): Promise<void> => {
-    try {
-      const r = await window.api.teams.importTeam()
-      if (r) {
-        setAddingTeam(false)
-        if (r.warnings.length) window.alert(`Ekip içe aktarıldı.\n\n• ${r.warnings.join('\n• ')}`)
-      }
-    } catch (e) {
-      setError(cleanError(e))
-    }
-  }
+  const importPack = (): Promise<void> =>
+    run(async () => {
+      const r = await window.api.agents.importPack()
+      if (r)
+        window.alert(
+          `${r.added.length} ajan eklendi${r.added.length ? ': ' + r.added.join(', ') : ''}.` +
+            (r.warnings.length ? `\n\n• ${r.warnings.join('\n• ')}` : '')
+        )
+    })
+
+  const addTemplate = (): Promise<void> =>
+    run(async () => {
+      const added = await window.api.templates.apply('blog-video')
+      if (added.length) window.alert(`Havuza eklendi: ${added.join(', ')}`)
+    })
 
   const toggleTheme = (): void => {
     window.api.settings.set({ theme: theme === 'dark' ? 'light' : 'dark' })
-  }
-
-  const addTeam = async (): Promise<void> => {
-    const name = teamName.trim()
-    if (!name) return
-    const dir = await window.api.dialog.pickFolder()
-    if (!dir) return
-    await window.api.templates.apply(templateId, name, dir)
-    setTeamName('')
-    setAddingTeam(false)
   }
 
   return (
@@ -145,152 +151,7 @@ export function Sidebar({
         ))}
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '0 6px'
-          }}
-        >
-          <span className="section-title">Ekipler</span>
-          <button className="ib" aria-label="Yeni ekip" onClick={() => setAddingTeam((v) => !v)}>
-            <Plus />
-          </button>
-        </div>
-        {data?.teams.map((t) => {
-          const active = t.id === team?.id
-          const busy = runs.some((r) => r.teamId === t.id && r.status === 'running')
-          if (editingId === t.id) {
-            return (
-              <div key={t.id} style={{ display: 'flex', gap: 4, padding: '2px 4px' }}>
-                <label htmlFor={`rn-${t.id}`} className="sr">
-                  Ekip adı
-                </label>
-                <input
-                  id={`rn-${t.id}`}
-                  className="inp"
-                  style={{ minHeight: 32, padding: '4px 8px' }}
-                  value={editName}
-                  autoFocus
-                  onChange={(e) => setEditName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') saveRename(t.id)
-                    if (e.key === 'Escape') setEditingId(null)
-                  }}
-                />
-                <button
-                  className="btn btn-sm btn-p"
-                  onClick={() => saveRename(t.id)}
-                  disabled={!editName.trim()}
-                >
-                  Kaydet
-                </button>
-              </div>
-            )
-          }
-          return (
-            <div
-              key={t.id}
-              className="team-row"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                borderRadius: 8,
-                ...(active
-                  ? { background: 'rgba(124,58,237,.14)', border: '1px solid rgba(139,92,246,.35)' }
-                  : { border: '1px solid transparent' })
-              }}
-            >
-              <button
-                className="nav"
-                onClick={() => window.api.settings.set({ activeTeamId: t.id })}
-                style={{
-                  flex: 1,
-                  minWidth: 0,
-                  background: 'transparent',
-                  color: active ? 'var(--text-hi)' : undefined
-                }}
-              >
-                <span
-                  style={{
-                    fontWeight: active ? 500 : 400,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap'
-                  }}
-                >
-                  {t.name}
-                </span>
-                {busy ? <span className="badge b-cli">çalışıyor</span> : null}
-              </button>
-              <span className="team-act" style={{ display: 'flex', paddingRight: 4 }}>
-                <button
-                  className="ib"
-                  aria-label={`${t.name} ekibini yeniden adlandır`}
-                  title="Yeniden adlandır"
-                  onClick={() => startRename(t.id, t.name)}
-                >
-                  <Pencil />
-                </button>
-                <button
-                  className="ib"
-                  aria-label={`${t.name} ekibini dışa aktar`}
-                  title="Dışa aktar (şablon dosyası)"
-                  onClick={() => exportTeam(t.id)}
-                >
-                  <Download />
-                </button>
-                <button
-                  className="ib"
-                  aria-label={`${t.name} ekibini sil`}
-                  title={(data?.teams.length ?? 0) <= 1 ? 'Son ekip silinemez' : 'Ekibi sil'}
-                  disabled={(data?.teams.length ?? 0) <= 1}
-                  onClick={() => removeTeam(t.id, t.name)}
-                >
-                  <Trash />
-                </button>
-              </span>
-            </div>
-          )
-        })}
-        {addingTeam ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '4px 6px' }}>
-            <label className="lbl" htmlFor="new-team">
-              Ekip adı
-            </label>
-            <input
-              id="new-team"
-              className="inp"
-              value={teamName}
-              onChange={(e) => setTeamName(e.target.value)}
-              placeholder="ör. Blog → Video"
-              autoFocus
-            />
-            <label className="lbl" htmlFor="new-team-tpl">
-              Şablon
-            </label>
-            <select
-              id="new-team-tpl"
-              className="inp"
-              value={templateId}
-              onChange={(e) => setTemplateId(e.target.value)}
-            >
-              <option value="blog-video">Blog → Video (6 ajan)</option>
-              <option value="empty">Boş ekip (yalnızca yönetici)</option>
-            </select>
-            <button className="btn btn-sm btn-p" onClick={addTeam} disabled={!teamName.trim()}>
-              Klasör seç ve oluştur
-            </button>
-            <button className="btn btn-sm" onClick={importTeam}>
-              Dosyadan içe aktar…
-            </button>
-          </div>
-        ) : null}
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minHeight: 0 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minHeight: 0 }}>
         <div
           style={{
             display: 'flex',
@@ -299,11 +160,129 @@ export function Sidebar({
             padding: '0 6px 4px'
           }}
         >
-          <span className="section-title">Ajanlar</span>
-          <button className="ib" aria-label="Yeni ajan" onClick={onNewAgent}>
+          <span className="section-title">Hedefler</span>
+          <button
+            className="ib"
+            aria-label="Yeni hedef"
+            title="Yeni hedef"
+            onClick={() => openGoal(null)}
+          >
             <Plus />
           </button>
         </div>
+        <button
+          className={`nav ${view === 'command' && !orchId ? 'active' : ''}`}
+          onClick={() => openGoal(null)}
+        >
+          + Yeni hedef
+        </button>
+        <div
+          className="scroll"
+          style={{ maxHeight: '34vh', display: 'flex', flexDirection: 'column', gap: 2 }}
+        >
+          {goals.map((o) => {
+            const sel = view === 'command' && o.id === orchId
+            return (
+              <div
+                key={o.id}
+                className="team-row"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  borderRadius: 8,
+                  ...(sel
+                    ? {
+                        background: 'rgba(124,58,237,.14)',
+                        border: '1px solid rgba(139,92,246,.35)'
+                      }
+                    : { border: '1px solid transparent' })
+                }}
+              >
+                <button
+                  className="nav"
+                  onClick={() => openGoal(o.id)}
+                  title={`${o.title} · ${STATUS[o.status]}`}
+                  style={{ flex: 1, minWidth: 0, background: 'transparent', gap: 8 }}
+                >
+                  <span className="dot" style={{ background: DOT[o.status], flexShrink: 0 }} />
+                  <span
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      color: sel ? 'var(--text-hi)' : undefined
+                    }}
+                  >
+                    {o.title}
+                  </span>
+                  <span className="hint" style={{ flexShrink: 0 }}>
+                    {dayOf(o.startedAt)}
+                  </span>
+                </button>
+                <span className="team-act" style={{ display: 'flex', paddingRight: 4 }}>
+                  <button
+                    className="ib"
+                    aria-label={`${o.title} hedefini sil`}
+                    title="Listeden sil (dosyalar kalır)"
+                    onClick={() => removeGoal(o)}
+                  >
+                    <Trash />
+                  </button>
+                </span>
+              </div>
+            )
+          })}
+          {!goals.length ? (
+            <div className="hint" style={{ padding: '4px 8px' }}>
+              Henüz hedef yok.
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      <div
+        className="scroll"
+        style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minHeight: 0 }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0 6px 4px'
+          }}
+        >
+          <span className="section-title">Ajan havuzu</span>
+          <span style={{ display: 'flex' }}>
+            <button
+              className="ib"
+              aria-label="Ajan paketi işlemleri"
+              title="İçe / dışa aktar, şablon"
+              aria-expanded={packMenu}
+              onClick={() => setPackMenu(!packMenu)}
+            >
+              <Download />
+            </button>
+            <button className="ib" aria-label="Yeni ajan" title="Yeni ajan" onClick={onNewAgent}>
+              <Plus />
+            </button>
+          </span>
+        </div>
+        {packMenu ? (
+          <div className="card" style={{ padding: 6, gap: 2, margin: '0 4px 6px' }}>
+            <button className="nav" onClick={importPack}>
+              <Upload /> Dosyadan ajan ekle…
+            </button>
+            <button className="nav" onClick={() => run(() => window.api.agents.exportAll())}>
+              <Download /> Ajanları dışa aktar…
+            </button>
+            <button className="nav" onClick={addTemplate}>
+              <Plus /> Blog → Video ajanlarını ekle
+            </button>
+          </div>
+        ) : null}
         {agents.map((a) => {
           const st = agentState(a.id, runs)
           const sel = a.id === selectedAgentId
@@ -356,7 +335,7 @@ export function Sidebar({
         })}
         {!agents.length ? (
           <div className="hint" style={{ padding: '4px 8px' }}>
-            Bu ekipte ajan yok.
+            Havuzda ajan yok.
           </div>
         ) : null}
       </div>

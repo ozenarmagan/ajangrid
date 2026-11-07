@@ -10,7 +10,7 @@ import {
   type EngineKind
 } from '../../../shared/types'
 import { Folder, Trash } from '../components/Icons'
-import { useActiveTeam, useStore } from '../store'
+import { useStore } from '../store'
 import { AGENT_COLORS, blankAgent, cleanError, initialOf } from '../util'
 
 const MODEL_SUGGESTIONS: Record<string, string[]> = {
@@ -34,12 +34,8 @@ interface Props {
 
 export function AgentEditor({ agentId, onSaved, onDeleted, onTest }: Props): React.JSX.Element {
   const { data } = useStore()
-  const team = useActiveTeam()
   const existing = data?.agents.find((a) => a.id === agentId)
-  const teamAgents = data?.agents.filter((a) => a.teamId === team?.id) ?? []
-  const [draft, setDraft] = useState<Agent>(
-    () => existing ?? blankAgent(team?.id ?? '', teamAgents.length)
-  )
+  const [draft, setDraft] = useState<Agent>(() => existing ?? blankAgent(data?.agents.length ?? 0))
   const [preview, setPreview] = useState<{ command: string; notes: string[] }>({
     command: '',
     notes: []
@@ -85,10 +81,7 @@ export function AgentEditor({ agentId, onSaved, onDeleted, onTest }: Props): Rea
       return null
     }
     try {
-      const saved = await window.api.agents.save({
-        ...draft,
-        teamId: draft.teamId || team?.id || ''
-      })
+      const saved = await window.api.agents.save(draft)
       setDraft(saved)
       setDirty(false)
       setMsg('Kaydedildi.')
@@ -173,7 +166,7 @@ export function AgentEditor({ agentId, onSaved, onDeleted, onTest }: Props): Rea
                 {draft.name || 'Yeni ajan'}
               </h1>
               <span className="hint">
-                {team?.name} ekibinde{draft.isManager ? ' · ekibin yöneticisi' : ''}
+                {draft.isManager ? 'Yönetici' : 'Alt ajan'}
                 {dirty ? ' · kaydedilmemiş değişiklik' : ''}
               </span>
             </div>
@@ -256,7 +249,7 @@ export function AgentEditor({ agentId, onSaved, onDeleted, onTest }: Props): Rea
               checked={draft.isManager}
               onChange={(e) => set('isManager', e.target.checked)}
             />{' '}
-            Bu ekibin yöneticisi
+            Yönetici (tek olur; işaretlersen öncekinin yerini alır)
           </label>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span className="lbl">Renk</span>
@@ -400,7 +393,7 @@ export function AgentEditor({ agentId, onSaved, onDeleted, onTest }: Props): Rea
             }}
           >
             <label className="lbl" htmlFor="klasor">
-              Çalışma klasörü <span className="muted">(boş = ekip klasörü)</span>
+              Çalışma klasörü <span className="muted">(boş = hedefin klasörü; önerilir)</span>
             </label>
             <div style={{ display: 'flex', gap: 6 }}>
               <input
@@ -409,7 +402,7 @@ export function AgentEditor({ agentId, onSaved, onDeleted, onTest }: Props): Rea
                 style={{ fontSize: 12 }}
                 value={draft.workdir ?? ''}
                 onChange={(e) => set('workdir', e.target.value)}
-                placeholder={team?.workdir}
+                placeholder="Her hedefin kendi klasörü"
               />
               <button className="btn" aria-label="Klasör seç" onClick={pickDir}>
                 <Folder />

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Agent, RunInfo, Theme, WorkdirEntry } from '../../../shared/types'
-import { useActiveTeam, useStore, useTeamAgents } from '../store'
+import { useAgents, useCurrentOrch, useStore } from '../store'
 import { agentState, duration, engineLine, fileSize, initialOf, stripAnsi } from '../util'
 import { AgentTerminal } from './AgentTerminal'
 import { FilePreview } from './FilePreview'
@@ -34,15 +34,19 @@ function AgentCard({
   open,
   onToggle,
   onEdit,
-  theme
+  theme,
+  orchId
 }: {
   agent: Agent
   open: boolean
   onToggle: () => void
   onEdit: () => void
   theme: Theme
+  /** Seçili hedef varsa yalnızca onun çalışmaları gösterilir */
+  orchId?: string
 }): React.JSX.Element {
-  const { data, runs, outputOf } = useStore()
+  const { data, runs: allRuns, outputOf } = useStore()
+  const runs = orchId ? allRuns.filter((r) => r.orchId === orchId) : allRuns
   const [raw, setRaw] = useState(false)
   const mine = runs.filter((r) => r.agentId === agent.id).sort((a, b) => a.startedAt - b.startedAt)
   const last = mine[mine.length - 1]
@@ -172,9 +176,8 @@ function AgentCard({
   )
 }
 
-function Files(): React.JSX.Element {
+function Files({ orchId }: { orchId: string }): React.JSX.Element {
   const { runs } = useStore()
-  const team = useActiveTeam()
   const [open, setOpen] = useState(false)
   const [tick, setTick] = useState(0)
   const [dir, setDir] = useState('')
@@ -183,15 +186,14 @@ function Files(): React.JSX.Element {
   const finished = runs.filter((r) => r.status !== 'running').length
 
   useEffect(() => {
-    if (!team) return
     let cancelled = false
-    window.api.fs.list(team.id, dir).then((list) => {
+    window.api.fs.list(orchId, dir).then((list) => {
       if (!cancelled) setFiles(list)
     })
     return () => {
       cancelled = true
     }
-  }, [team, finished, open, tick, dir])
+  }, [orchId, finished, open, tick, dir])
 
   const up = (): void => setDir(dir.includes('/') ? dir.slice(0, dir.lastIndexOf('/')) : '')
 
@@ -204,7 +206,7 @@ function Files(): React.JSX.Element {
           onClick={() => setOpen(!open)}
           aria-expanded={open}
         >
-          {open ? '▾' : '▸'} Dosyalar
+          {open ? '▾' : '▸'} Bu hedefin dosyaları
         </button>
         <div style={{ display: 'flex', gap: 4 }}>
           <button className="ib" aria-label="Yenile" onClick={() => setTick((t) => t + 1)}>
@@ -213,7 +215,7 @@ function Files(): React.JSX.Element {
           <button
             className="ib"
             aria-label="Klasörü Finder'da aç"
-            onClick={() => team && window.api.fs.open(team.id, dir)}
+            onClick={() => window.api.fs.open(orchId, dir)}
           >
             <Folder />
           </button>
@@ -259,8 +261,8 @@ function Files(): React.JSX.Element {
           </div>
         </>
       ) : null}
-      {preview && team ? (
-        <FilePreview teamId={team.id} rel={preview} onClose={() => setPreview(null)} />
+      {preview ? (
+        <FilePreview orchId={orchId} rel={preview} onClose={() => setPreview(null)} />
       ) : null}
     </section>
   )
@@ -278,15 +280,33 @@ export function TeamPanel({
   onEditAgent: (id: string) => void
   theme: Theme
 }): React.JSX.Element {
-  const agents = useTeamAgents().filter((a) => !a.isManager)
+  const agents = useAgents().filter((a) => !a.isManager)
   const { runs } = useStore()
+  const o = useCurrentOrch()
+  const [showOthers, setShowOthers] = useState(false)
+  // Seçili hedefte görev alanlar üstte; diğerleri katlanır listede
+  const usedIds = new Set(o?.steps.filter((s) => s.kind === 'task').map((s) => s.agentId))
+  const used = o ? agents.filter((a) => usedIds.has(a.id)) : agents
+  const others = o ? agents.filter((a) => !usedIds.has(a.id)) : []
   const busy = runs.filter(
     (r) => r.status === 'running' && agents.some((a) => a.id === r.agentId)
   ).length
 
+  const card = (a: Agent): React.JSX.Element => (
+    <AgentCard
+      key={a.id}
+      agent={a}
+      open={focusId === a.id}
+      onToggle={() => setFocusId(focusId === a.id ? null : a.id)}
+      onEdit={() => onEditAgent(a.id)}
+      theme={theme}
+      orchId={o?.id}
+    />
+  )
+
   return (
     <aside
-      aria-label="Ekip"
+      aria-label="Ajanlar"
       className="scroll"
       style={{
         width: 400,
@@ -301,28 +321,40 @@ export function TeamPanel({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h2 className="h2">Ekip</h2>
+        <h2 className="h2">{o ? 'Bu hedefte çalışanlar' : 'Ajan havuzu'}</h2>
         <span className="hint">{busy ? `${busy} ajan çalışıyor` : `${agents.length} ajan`}</span>
       </div>
       {!agents.length ? (
         <div className="hint" style={{ lineHeight: 1.6 }}>
-          Henüz alt ajan yok. Yöneticiye hedefini yaz; gereken ajanları önerir, onaylarsan
-          oluşturulur.
+          Henüz alt ajan yok. Yöneticiye hedefini yaz; gereken ajanları önerir, onaylarsan havuza
+          eklenir.
         </div>
       ) : null}
-      {agents.map((a) => (
-        <AgentCard
-          key={a.id}
-          agent={a}
-          open={focusId === a.id}
-          onToggle={() => setFocusId(focusId === a.id ? null : a.id)}
-          onEdit={() => onEditAgent(a.id)}
-          theme={theme}
-        />
-      ))}
-      <div style={{ marginTop: 'auto', paddingTop: 8, borderTop: '1px solid var(--w08)' }}>
-        <Files />
-      </div>
+      {o && !used.length && agents.length ? (
+        <div className="hint">Yönetici henüz kimseye görev vermedi.</div>
+      ) : null}
+      {used.map(card)}
+      {others.length ? (
+        <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <button
+            className="linkbtn"
+            style={{ fontSize: 13, color: 'var(--text2)' }}
+            onClick={() => setShowOthers(!showOthers)}
+            aria-expanded={showOthers}
+          >
+            {showOthers ? '▾' : '▸'} Havuzdaki diğer ajanlar ({others.length})
+          </button>
+          {showOthers ? others.map(card) : null}
+        </section>
+      ) : null}
+      {o ? (
+        <div style={{ marginTop: 'auto', paddingTop: 8, borderTop: '1px solid var(--w08)' }}>
+          <Files key={o.id} orchId={o.id} />
+          <div className="hint mono" style={{ fontSize: 11, marginTop: 6, wordBreak: 'break-all' }}>
+            {o.workdir}
+          </div>
+        </div>
+      ) : null}
     </aside>
   )
 }

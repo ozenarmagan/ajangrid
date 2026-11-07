@@ -82,3 +82,23 @@ export const Download = ({ size = 14 }: P): React.JSX.Element => (
     <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
   </svg>
 )
+export const Paperclip = ({ size = 16 }: P): React.JSX.Element => (
+  <svg {...base(size)}>
+    <path d="M21 11.5l-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l7.9-7.9" />
+  </svg>
+)
+export const Send = ({ size = 16 }: P): React.JSX.Element => (
+  <svg {...base(size)}>
+    <path d="M5 12h13M13 6l6 6-6 6" />
+  </svg>
+)
+export const Upload = ({ size = 14 }: P): React.JSX.Element => (
+  <svg {...base(size)}>
+    <path d="M12 20V9M7 14l5-5 5 5M5 4h14" />
+  </svg>
+)
+export const X = ({ size = 12 }: P): React.JSX.Element => (
+  <svg {...base(size)}>
+    <path d="M6 6l12 12M18 6L6 18" />
+  </svg>
+)

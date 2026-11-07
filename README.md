@@ -1,6 +1,6 @@
 # AjanGrid
 
-Yönetici ve alt ajanlardan oluşan ajan ekiplerini kurup çalıştırmak için bir masaüstü uygulaması (Windows / macOS). Her ajan farklı bir motorla çalışabilir:
+Tek bir yönetici ve ortak bir alt ajan havuzuyla çalışan masaüstü uygulaması (Windows / macOS). Hedefini yöneticiye yazarsın; yönetici havuzdan uygun ajanları seçip görevleri dağıtır. Her ajan farklı bir motorla çalışabilir:
 
 - **CLI · abonelik**: Bilgisayarında kurulu Claude Code, Codex CLI, Gemini CLI ya da şablonla tanımlanan herhangi bir CLI. Ücretli aboneliğinin limitlerini kullanır.
 - **API · kullandıkça öde**: Anthropic, OpenAI, Google ve OpenRouter.
@@ -10,7 +10,9 @@ Yönetici ve alt ajanlardan oluşan ajan ekiplerini kurup çalıştırmak için 
 
 | Özellik                                                                                      | Durum |
 | -------------------------------------------------------------------------------------------- | ----- |
-| Ekipler, ajan oluşturma/düzenleme (rol, motor, model, efor, klasör, izinler)                 | ✅    |
+| Tek yönetici + ajan havuzu; her hedef kendi klasöründe, paralel hedefler                     | ✅    |
+| Ajan oluşturma/düzenleme (rol, motor, model, efor, klasör, izinler)                          | ✅    |
+| Sohbet kutusu: Enter ile gönder, dosya/görsel ekleme (ataç, sürükle-bırak, yapıştır)         | ✅    |
 | CLI ajanlarını headless çalıştırma, canlı çıktı                                              | ✅    |
 | API ajanları (yanıt `outputs/` klasörüne kaydedilir)                                         | ✅    |
 | Yerel araç ajanları (komut şablonu)                                                          | ✅    |
@@ -18,24 +20,23 @@ Yönetici ve alt ajanlardan oluşan ajan ekiplerini kurup çalıştırmak için 
 | Onay noktaları ve yöneticinin kullanıcıya soru sorması                                       | ✅    |
 | Limit algılama ve limit dolunca API yedeği, bekle-tekrar dene ya da sor                      | ✅    |
 | API token/maliyet takibi, sağlayıcı başına günlük harcama tavanı                             | ✅    |
-| "Blog → Video" ekip şablonu                                                                  | ✅    |
+| "Blog → Video" ajan şablonu                                                                  | ✅    |
 | Yönetici merkezli ekran (solda yönetici, sağda ekibin okunur durumu), aydınlık/karanlık tema | ✅    |
-| Yöneticinin ekip önermesi (create_agents), onayla oluşturma                                  | ✅    |
+| Yöneticinin yeni ajan önermesi (create_agents), onayla oluşturma                             | ✅    |
 | Görevlerin Kanban görünümü (onay bekliyor / çalışıyor / tamamlandı / hata)                   | ✅    |
-| Ekip yeniden adlandırma ve silme                                                             | ✅    |
 | Claude Code ajanlarında oturum sürekliliği (aynı hedefte bağlam korunur)                     | ✅    |
 | Her adımdan önce klasör anlık görüntüsü ve adımı geri alma                                   | ✅    |
 | Yarım kalan döngüyü kaldığı yerden sürdürme                                                  | ✅    |
 | Masaüstü bildirimleri ve Telegram botu (onay, yanıt, /hedef, /durum)                         | ✅    |
 | Zamanlanmış hedefler                                                                         | ✅    |
 | Uygulama içi dosya önizleme (metin, görsel, video, ses), sürükle-bırak                       | ✅    |
-| Ekip şablonu dışa/içe aktarma, MCP sunucuları (Claude Code)                                  | ✅    |
+| Ajan paketi dışa/içe aktarma, MCP sunucuları (Claude Code)                                   | ✅    |
 
 ## Yönetici döngüsü
 
 Yöneticiye bir hedef verildiğinde her turda şu adımlar işler:
 
-1. **Yöneticiye sorulur.** Yönetici normal bir ajan gibi kendi motoruyla çalıştırılır. Komut isteminde hedef, ekip kartları (ad, unvan, motor), çalışma klasöründeki dosyalar ve o ana kadarki tüm adımlar ile çıktıları yer alır.
+1. **Yöneticiye sorulur.** Yönetici normal bir ajan gibi kendi motoruyla çalıştırılır. Komut isteminde hedef, ajan havuzu kartları (ad, unvan, motor), çalışma klasöründeki dosyalar ve o ana kadarki tüm adımlar ile çıktıları yer alır.
 2. **Yanıt bir eylem içerir.** Yönetici yanıtını tek bir json bloğuyla bitirir: `assign`, `assign_parallel`, `ask_user` ya da `finish`.
 3. **Görevler çalıştırılır.** AjanGrid görevleri ilgili ajanlarda çalıştırır, bitmelerini bekler ve çıktılarının son kısmını geçmişe ekler.
 4. **Onay noktaları uygulanır.** Onay noktası olarak işaretlenen ajanlara giden görevler çalıştırılmadan önce senin onayına sunulur. Bu kontrol yöneticiye bırakılmaz, sistem tarafından yapılır.
@@ -122,10 +123,11 @@ Her çalışma `<klasör>/.ajangrid/runs/` altına log olarak yazılır. API yan
 
 ## Veriler nerede
 
-| İçerik                    | Konum                      |
-| ------------------------- | -------------------------- |
-| Ekipler, ajanlar, araçlar | `<userData>/ajangrid.json` |
-| API anahtarları           | `<userData>/secrets.json`  |
+| İçerik                    | Konum                           |
+| ------------------------- | ------------------------------- |
+| Ajanlar, araçlar, ayarlar | `<userData>/ajangrid.json`      |
+| Hedef kayıtları           | `<userData>/hedefler/<id>.json` |
+| API anahtarları           | `<userData>/secrets.json`       |
 
 API anahtarları Electron `safeStorage` ile şifrelenir (macOS Keychain, Windows DPAPI) ve arayüze geri gönderilmez.
 
@@ -147,7 +149,7 @@ macOS'ta Finder'dan açılan uygulamalar kabuk PATH'ini görmez. AjanGrid açıl
 ```
 src/main/
   index.ts          pencere + IPC
-  store.ts          ekipler/ajanlar/araçlar (JSON)
+  store.ts          ajanlar/araçlar/ayarlar (JSON) + v1→v2 geçişi
   secrets.ts        şifreli API anahtarları
   runner.ts         çalışma yöneticisi: süreç başlatma, canlı çıktı, durdurma, log
   shellEnv.ts       PATH, which/where, tırnaklama
@@ -155,6 +157,6 @@ src/main/
   engines/api.ts    sağlayıcı istekleri
   engines/detect.ts kurulu CLI'ları bulma
 src/renderer/src/
-  views/            Komuta Merkezi (yönetici + ekip), Ajanlar, Motorlar
+  views/            Komuta Merkezi (yönetici sohbeti + ajanlar), Ajanlar, Motorlar
   components/       kenar çubuğu, xterm tabanlı ajan terminali
 ```

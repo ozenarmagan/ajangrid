@@ -31,23 +31,14 @@ export class Scheduler {
     for (const s of data.settings.schedules ?? []) {
       if (!s.enabled || s.time !== hhmm || !s.days.includes(now.getDay())) continue
       if (s.lastRunAt && Date.now() - s.lastRunAt < 5 * 60_000) continue
-      const team = data.teams.find((t) => t.id === s.teamId)
-      if (!team) continue
       update((d) => {
         const x = d.settings.schedules?.find((y) => y.id === s.id)
         if (x) x.lastRunAt = Date.now()
       })
       this.onDataChanged()
-      if (this.orch.active().some((o) => o.teamId === team.id)) {
-        notify(
-          'Zamanlanmış hedef atlandı',
-          `"${team.name}" ekibinde süren bir iş vardı: ${s.goal.slice(0, 80)}`
-        )
-        continue
-      }
       try {
-        this.orch.start(team.id, s.goal, team.checkpoints)
-        notify('Zamanlanmış hedef başladı', `${team.name}: ${s.goal.slice(0, 100)}`)
+        this.orch.start(s.goal)
+        notify('Zamanlanmış hedef başladı', s.goal.slice(0, 100))
       } catch (err) {
         notify('Zamanlanmış hedef başlatılamadı', (err as Error).message)
       }
@@ -70,14 +61,14 @@ export function notify(title: string, body: string): void {
 }
 
 export function notifyOrch(kind: OrchEvent, o: Orchestration): void {
-  const team = loadData().teams.find((t) => t.id === o.teamId)?.name ?? 'AjanGrid'
+  const team = o.title
   if (kind === 'question') {
     const k = o.question?.kind
     const title =
       k === 'approval'
         ? 'Onay gerekiyor'
         : k === 'team'
-          ? 'Ekip önerisi'
+          ? 'Yeni ajan önerisi'
           : k === 'limit'
             ? 'Limit doldu'
             : 'Yöneticinin sorusu'

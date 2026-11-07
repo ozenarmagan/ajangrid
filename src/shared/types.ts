@@ -17,7 +17,6 @@ export interface AgentPermissions {
 
 export interface Agent {
   id: string
-  teamId: string
   name: string
   /** Yöneticinin göreceği kısa görev unvanı */
   title: string
@@ -37,7 +36,7 @@ export interface Agent {
   /** Boş bırakılırsa CLI'ın varsayılan modeli kullanılır */
   model: string
   effort: Effort
-  /** Boşsa ekibin çalışma klasörü kullanılır */
+  /** Boşsa hedefin çalışma klasörü kullanılır */
   workdir?: string
   permissions: AgentPermissions
   /** Abonelik limiti dolunca ne yapılacağı (CLI ajanları) */
@@ -55,14 +54,6 @@ export interface AgentFallback {
   model?: string
   /** mode = 'wait' — kaç dakika sonra tekrar denensin */
   waitMinutes?: number
-}
-
-export interface Team {
-  id: string
-  name: string
-  workdir: string
-  /** Yönetici bu ajanlara görev vermeden önce kullanıcı onayı istenir */
-  checkpoints?: string[]
 }
 
 export interface LocalTool {
@@ -97,7 +88,6 @@ export interface McpServer {
 
 export interface Schedule {
   id: string
-  teamId: string
   goal: string
   /** 0 = Pazar … 6 = Cumartesi */
   days: number[]
@@ -109,7 +99,10 @@ export interface Schedule {
 
 export interface Settings {
   theme: Theme
-  activeTeamId: string | null
+  /** Yeni hedef klasörlerinin açıldığı kök (boşsa ~/AjanGrid/isler) */
+  workRoot?: string
+  /** Yönetici bu ajanlara görev vermeden önce kullanıcı onayı istenir */
+  checkpoints?: string[]
   /** Sağlayıcı başına fiyat (0 = bilinmiyor, maliyet hesaplanmaz) */
   apiPricing?: Partial<Record<ApiProvider, ApiPrice>>
   /** Sağlayıcı başına günlük harcama tavanı, USD (0 = sınırsız) */
@@ -126,8 +119,7 @@ export interface Settings {
 }
 
 export interface AppData {
-  version: 1
-  teams: Team[]
+  version: 2
   agents: Agent[]
   localTools: LocalTool[]
   settings: Settings
@@ -138,7 +130,6 @@ export type RunStatus = 'running' | 'done' | 'error' | 'stopped'
 export interface RunInfo {
   id: string
   agentId: string
-  teamId: string
   prompt: string
   status: RunStatus
   /** Kullanıcıya gösterilen komut satırı (gizli bilgi içermez) */
@@ -214,9 +205,12 @@ export interface OrchQuestion {
 
 export interface Orchestration {
   id: string
-  teamId: string
   managerId: string
+  /** Kısa başlık (hedefin ilk satırından) */
+  title: string
   goal: string
+  /** Bu hedefin dosyalarının bulunduğu klasör */
+  workdir: string
   status: OrchStatus
   steps: OrchStep[]
   question?: OrchQuestion
@@ -234,6 +228,14 @@ export interface Orchestration {
 export interface OrchAnswer {
   approve?: boolean
   text?: string
+  /** Mesaja eklenen dosyaların mutlak yolları (hedef klasörüne kopyalanır) */
+  files?: string[]
+}
+
+export interface StartGoalOptions {
+  /** Var olan bir klasörde çalış (boşsa yeni klasör açılır) */
+  workdir?: string
+  files?: string[]
 }
 
 // ---------- Kullanım ----------

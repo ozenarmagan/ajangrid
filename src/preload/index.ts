@@ -12,8 +12,8 @@ import type {
   RunDataEvent,
   RunInfo,
   Settings,
+  StartGoalOptions,
   TelegramStatus,
-  Team,
   WorkdirEntry
 } from '../shared/types'
 
@@ -32,13 +32,10 @@ const api = {
   },
   agents: {
     save: (a: Agent): Promise<Agent> => ipcRenderer.invoke('agents:save', a),
-    remove: (id: string): Promise<void> => ipcRenderer.invoke('agents:delete', id)
-  },
-  teams: {
-    save: (t: Team): Promise<Team> => ipcRenderer.invoke('teams:save', t),
-    remove: (id: string): Promise<void> => ipcRenderer.invoke('teams:delete', id),
-    exportTeam: (id: string): Promise<string | null> => ipcRenderer.invoke('teams:export', id),
-    importTeam: (): Promise<{ warnings: string[] } | null> => ipcRenderer.invoke('teams:import')
+    remove: (id: string): Promise<void> => ipcRenderer.invoke('agents:delete', id),
+    exportAll: (): Promise<string | null> => ipcRenderer.invoke('agents:export'),
+    importPack: (): Promise<{ added: string[]; warnings: string[] } | null> =>
+      ipcRenderer.invoke('agents:import')
   },
   tools: {
     save: (t: LocalTool): Promise<LocalTool> => ipcRenderer.invoke('tools:save', t),
@@ -70,9 +67,12 @@ const api = {
     onUpdate: (cb: (r: RunInfo) => void): Unsubscribe => on('run:update', cb)
   },
   orch: {
-    list: (teamId: string): Promise<Orchestration[]> => ipcRenderer.invoke('orch:list', teamId),
-    start: (teamId: string, goal: string, checkpoints?: string[]): Promise<Orchestration> =>
-      ipcRenderer.invoke('orch:start', teamId, goal, checkpoints),
+    list: (): Promise<Orchestration[]> => ipcRenderer.invoke('orch:list'),
+    start: (goal: string, opts?: StartGoalOptions): Promise<Orchestration> =>
+      ipcRenderer.invoke('orch:start', goal, opts),
+    message: (id: string, text: string, files?: string[]): Promise<void> =>
+      ipcRenderer.invoke('orch:message', id, text, files),
+    remove: (id: string): Promise<void> => ipcRenderer.invoke('orch:delete', id),
     stop: (id: string): Promise<void> => ipcRenderer.invoke('orch:stop', id),
     answer: (id: string, ans: OrchAnswer): Promise<void> =>
       ipcRenderer.invoke('orch:answer', id, ans),
@@ -84,8 +84,8 @@ const api = {
   templates: {
     list: (): Promise<Array<{ id: string; name: string; description: string }>> =>
       ipcRenderer.invoke('templates:list'),
-    apply: (templateId: string, name: string, workdir: string): Promise<string> =>
-      ipcRenderer.invoke('templates:apply', templateId, name, workdir)
+    apply: (templateId: string): Promise<string[]> =>
+      ipcRenderer.invoke('templates:apply', templateId)
   },
   telegram: {
     status: (): Promise<TelegramStatus> => ipcRenderer.invoke('telegram:status'),
@@ -100,17 +100,20 @@ const api = {
     summary: (): Promise<UsageSummary> => ipcRenderer.invoke('usage:summary')
   },
   dialog: {
-    pickFolder: (): Promise<string | null> => ipcRenderer.invoke('dialog:pickFolder')
+    pickFolder: (): Promise<string | null> => ipcRenderer.invoke('dialog:pickFolder'),
+    pickFiles: (): Promise<string[]> => ipcRenderer.invoke('dialog:pickFiles')
   },
   fs: {
-    list: (teamId: string, rel: string): Promise<WorkdirEntry[]> =>
-      ipcRenderer.invoke('fs:list', teamId, rel),
-    open: (teamId: string, rel: string): Promise<void> =>
-      ipcRenderer.invoke('fs:open', teamId, rel),
+    list: (orchId: string, rel: string): Promise<WorkdirEntry[]> =>
+      ipcRenderer.invoke('fs:list', orchId, rel),
+    open: (orchId: string, rel: string): Promise<void> =>
+      ipcRenderer.invoke('fs:open', orchId, rel),
     openAgentDir: (agentId: string): Promise<void> =>
       ipcRenderer.invoke('fs:openAgentDir', agentId),
-    import: (teamId: string, paths: string[]): Promise<string[]> =>
-      ipcRenderer.invoke('fs:import', teamId, paths),
+    import: (orchId: string, paths: string[]): Promise<string[]> =>
+      ipcRenderer.invoke('fs:import', orchId, paths),
+    saveTemp: (name: string, bytes: ArrayBuffer): Promise<string> =>
+      ipcRenderer.invoke('fs:saveTemp', name, bytes),
     /** Sürüklenen dosyanın diskteki yolu */
     pathForFile: (f: File): string => webUtils.getPathForFile(f)
   }

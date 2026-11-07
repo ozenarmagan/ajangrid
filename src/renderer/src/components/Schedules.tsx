@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Schedule } from '../../../shared/types'
-import { useActiveTeam, useStore } from '../store'
+import { useStore } from '../store'
 import { Trash } from './Icons'
 
 const DAYS = [
@@ -30,9 +30,8 @@ export function Schedules({
   onCreated: () => void
 }): React.JSX.Element {
   const { data } = useStore()
-  const team = useActiveTeam()
   const all = data?.settings.schedules ?? []
-  const mine = all.filter((s) => s.teamId === team?.id)
+  const mine = all
   const [days, setDays] = useState<number[]>([1, 2, 3, 4, 5])
   const [time, setTime] = useState('09:00')
 
@@ -41,12 +40,11 @@ export function Schedules({
   }
 
   const add = (): void => {
-    if (!team || !goal.trim() || !days.length) return
+    if (!goal.trim() || !days.length) return
     save([
       ...all,
       {
         id: crypto.randomUUID(),
-        teamId: team.id,
         goal: goal.trim(),
         days: [...days].sort(),
         time,
@@ -93,7 +91,7 @@ export function Schedules({
           </button>
         </div>
       ))}
-      {!mine.length ? <div className="hint">Bu ekipte zamanlanmış hedef yok.</div> : null}
+      {!mine.length ? <div className="hint">Zamanlanmış hedef yok.</div> : null}
 
       <div
         style={{

@@ -1,7 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from 'electron'
 import { pathToFileURL } from 'url'
-import { cpSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'fs'
-import { basename, extname, join, resolve, sep } from 'path'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
+import { basename, join, resolve, sep } from 'path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import type {
@@ -10,7 +11,7 @@ import type {
   LocalTool,
   OrchAnswer,
   Settings,
-  Team,
+  StartGoalOptions,
   WorkdirEntry
 } from '../shared/types'
 import { loadData, newId, update } from './store'
@@ -23,12 +24,13 @@ import { applyTemplate, TEMPLATES } from './templates'
 import { summary as usageSummary } from './usage'
 import { TelegramBot } from './telegram'
 import { notifyOrch, Scheduler } from './scheduler'
-import { exportTeam, importTeam } from './teamio'
+import { exportAgents, importAgents } from './teamio'
+import { copyInto } from './files'
 
 let mainWindow: BrowserWindow | null = null
 
-// Uygulama içi dosya önizleme: ajfile://<ekipId>/<göreli yol>
-// Yalnızca ekiplerin çalışma klasörlerindeki dosyalar sunulur.
+// Uygulama içi dosya önizleme: ajfile://<hedefId>/<göreli yol>
+// Yalnızca hedeflerin çalışma klasörlerindeki dosyalar sunulur.
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'ajfile',
@@ -123,10 +125,10 @@ function registerIpc(): void {
       createdAt: agent.createdAt || Date.now()
     }
     update((d) => {
-      // Bir ekipte tek yönetici olabilir
+      // Tek yönetici olabilir
       if (saved.isManager) {
         d.agents.forEach((a) => {
-          if (a.teamId === saved.teamId && a.id !== saved.id) a.isManager = false
+          if (a.id !== saved.id) a.isManager = false
         })
       }
       const i = d.agents.findIndex((a) => a.id === saved.id)
@@ -140,56 +142,30 @@ function registerIpc(): void {
   ipcMain.handle('agents:delete', (_e, id: string) => {
     update((d) => {
       d.agents = d.agents.filter((a) => a.id !== id)
+      d.settings.checkpoints = (d.settings.checkpoints ?? []).filter((x) => x !== id)
     })
     broadcastData()
   })
 
-  ipcMain.handle('teams:save', (_e, team: Team) => {
-    const saved: Team = { ...team, id: team.id || newId() }
-    update((d) => {
-      const i = d.teams.findIndex((t) => t.id === saved.id)
-      if (i >= 0) d.teams[i] = saved
-      else d.teams.push(saved)
-      if (!d.settings.activeTeamId) d.settings.activeTeamId = saved.id
-    })
-    broadcastData()
-    return saved
-  })
-
-  ipcMain.handle('teams:delete', (_e, id: string) => {
-    if (loadData().teams.length <= 1) throw new Error('Son ekip silinemez.')
-    // Süren yönetici döngülerini ve çalışmaları durdur
-    orch.list(id).forEach((o) => orch.stop(o.id))
-    runs.stopTeam(id)
-    update((d) => {
-      if (d.teams.length <= 1) return
-      d.teams = d.teams.filter((t) => t.id !== id)
-      d.agents = d.agents.filter((a) => a.teamId !== id)
-      if (d.settings.activeTeamId === id) d.settings.activeTeamId = d.teams[0]?.id ?? null
-    })
-    broadcastData()
-  })
-
-  ipcMain.handle('teams:export', async (_e, teamId: string) => {
+  ipcMain.handle('agents:export', async () => {
     if (!mainWindow) return null
-    const file = exportTeam(loadData(), teamId)
-    const safe = file.name.replace(/[^\p{L}\p{N} _-]+/gu, '').trim() || 'ekip'
+    const file = exportAgents(loadData())
     const r = await dialog.showSaveDialog(mainWindow, {
-      title: 'Ekibi dışa aktar',
-      defaultPath: `${safe}.ajangrid.json`,
-      filters: [{ name: 'AjanGrid ekibi', extensions: ['json'] }]
+      title: 'Ajanları dışa aktar',
+      defaultPath: 'ajanlar.ajangrid.json',
+      filters: [{ name: 'AjanGrid ajan paketi', extensions: ['json'] }]
     })
     if (r.canceled || !r.filePath) return null
     writeFileSync(r.filePath, JSON.stringify(file, null, 2), 'utf8')
     return r.filePath
   })
 
-  ipcMain.handle('teams:import', async () => {
+  ipcMain.handle('agents:import', async () => {
     if (!mainWindow) return null
     const pick = await dialog.showOpenDialog(mainWindow, {
-      title: 'Ekip şablonunu seç',
+      title: 'Ajan paketini seç',
       properties: ['openFile'],
-      filters: [{ name: 'AjanGrid ekibi', extensions: ['json'] }]
+      filters: [{ name: 'AjanGrid ajan paketi', extensions: ['json'] }]
     })
     if (pick.canceled || !pick.filePaths[0]) return null
     let raw: unknown
@@ -198,19 +174,12 @@ function registerIpc(): void {
     } catch {
       throw new Error('Dosya okunamadı ya da geçerli JSON değil.')
     }
-    const dir = await dialog.showOpenDialog(mainWindow, {
-      title: 'Bu ekibin çalışma klasörünü seç',
-      properties: ['openDirectory', 'createDirectory']
-    })
-    if (dir.canceled || !dir.filePaths[0]) return null
-    let warnings: string[] = []
+    let result = { added: [] as string[], warnings: [] as string[] }
     update((d) => {
-      const r = importTeam(d, raw, dir.filePaths[0])
-      warnings = r.warnings
-      d.settings.activeTeamId = r.team.id
+      result = importAgents(d, raw)
     })
     broadcastData()
-    return { warnings }
+    return result
   })
 
   ipcMain.handle('tools:save', (_e, tool: LocalTool) => {
@@ -264,11 +233,15 @@ function registerIpc(): void {
   ipcMain.handle('runs:clear', (_e, agentId?: string) => runs.clearFinished(agentId))
   ipcMain.handle('runs:preview', (_e, agent: Agent) => runs.preview(loadData(), agent))
 
-  ipcMain.handle('orch:list', (_e, teamId: string) => orch.list(teamId))
-  ipcMain.handle('orch:start', (_e, teamId: string, goal: string, checkpoints?: string[]) => {
-    if (!goal.trim()) throw new Error('Hedef boş olamaz.')
-    return orch.start(teamId, goal.trim(), checkpoints)
+  ipcMain.handle('orch:list', () => orch.list())
+  ipcMain.handle('orch:start', (_e, goal: string, opts?: StartGoalOptions) => {
+    if (!goal.trim() && !opts?.files?.length) throw new Error('Hedef boş olamaz.')
+    return orch.start(goal.trim() || 'Eklenen dosyaları incele.', opts)
   })
+  ipcMain.handle('orch:message', (_e, id: string, text: string, files?: string[]) =>
+    orch.message(id, text, files)
+  )
+  ipcMain.handle('orch:delete', (_e, id: string) => orch.remove(id))
   ipcMain.handle('orch:stop', (_e, id: string) => orch.stop(id))
   ipcMain.handle('orch:answer', (_e, id: string, ans: OrchAnswer) => orch.answer(id, ans))
   ipcMain.handle('orch:resume', (_e, id: string) => orch.resume(id))
@@ -277,16 +250,13 @@ function registerIpc(): void {
   )
 
   ipcMain.handle('templates:list', () => TEMPLATES)
-  ipcMain.handle('templates:apply', (_e, templateId: string, name: string, workdir: string) => {
-    let teamId = ''
+  ipcMain.handle('templates:apply', (_e, templateId: string) => {
+    let added: string[] = []
     update((d) => {
-      const t = applyTemplate(d, templateId, name, workdir)
-      teamId = t.id
-      d.settings.activeTeamId = t.id
+      added = applyTemplate(d, templateId)
     })
-    ensureDir(workdir)
     broadcastData()
-    return teamId
+    return added
   })
 
   ipcMain.handle('telegram:status', () => telegram.status())
@@ -306,38 +276,46 @@ function registerIpc(): void {
     return r.canceled ? null : (r.filePaths[0] ?? null)
   })
 
-  ipcMain.handle('fs:list', (_e, teamId: string, rel: string) => {
-    const data = loadData()
-    const team = data.teams.find((t) => t.id === teamId)
-    if (!team) return []
-    ensureDir(team.workdir)
-    return listDir(team.workdir, rel || '')
+  const goalDir = (orchId: string): string | null => orch.get(orchId)?.workdir ?? null
+
+  ipcMain.handle('fs:list', (_e, orchId: string, rel: string) => {
+    const dir = goalDir(orchId)
+    if (!dir) return []
+    ensureDir(dir)
+    return listDir(dir, rel || '')
   })
 
-  ipcMain.handle('fs:open', (_e, teamId: string, rel: string) => {
-    const team = loadData().teams.find((t) => t.id === teamId)
-    if (!team) return
-    const abs = safeJoin(team.workdir, rel || '')
+  ipcMain.handle('fs:open', (_e, orchId: string, rel: string) => {
+    const dir = goalDir(orchId)
+    if (!dir) return
+    const abs = safeJoin(dir, rel || '')
     if (abs) shell.openPath(abs)
   })
 
-  // Sürükle-bırak: dosyaları ekip klasöründeki kaynak/ altına kopyala
-  ipcMain.handle('fs:import', (_e, teamId: string, paths: string[]) => {
-    const team = loadData().teams.find((t) => t.id === teamId)
-    if (!team) throw new Error('Ekip bulunamadı.')
-    const dir = join(team.workdir, 'kaynak')
-    ensureDir(dir)
-    const out: string[] = []
-    for (const p of paths) {
-      if (!p || !existsSync(p)) continue
-      const ext = extname(p)
-      const stem = basename(p, ext)
-      let name = basename(p)
-      for (let i = 2; existsSync(join(dir, name)); i++) name = `${stem}-${i}${ext}`
-      cpSync(p, join(dir, name), { recursive: true })
-      out.push(`kaynak/${name}`)
-    }
-    return out
+  // Sürükle-bırak: dosyaları hedef klasöründeki kaynak/ altına kopyala
+  ipcMain.handle('fs:import', (_e, orchId: string, paths: string[]) => {
+    const dir = goalDir(orchId)
+    if (!dir) throw new Error('Hedef bulunamadı.')
+    return copyInto(dir, paths)
+  })
+
+  // Yapıştırılan görseller gibi yolu olmayan dosyalar: geçici klasöre yazılır
+  ipcMain.handle('fs:saveTemp', (_e, name: string, bytes: ArrayBuffer) => {
+    const dir = join(tmpdir(), 'ajangrid-ekler', newId().slice(0, 8))
+    mkdirSync(dir, { recursive: true })
+    const safe = basename(name || 'ek').replace(/[^\p{L}\p{N}._ -]+/gu, '_') || 'ek'
+    const p = join(dir, safe)
+    writeFileSync(p, Buffer.from(bytes))
+    return p
+  })
+
+  ipcMain.handle('dialog:pickFiles', async () => {
+    if (!mainWindow) return []
+    const r = await dialog.showOpenDialog(mainWindow, {
+      title: 'Eklenecek dosyaları seç',
+      properties: ['openFile', 'multiSelections']
+    })
+    return r.canceled ? [] : r.filePaths
   })
 
   ipcMain.handle('fs:openAgentDir', (_e, agentId: string) => {
@@ -354,9 +332,9 @@ app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.hngbilisim.ajangrid')
   protocol.handle('ajfile', (req) => {
     const u = new URL(req.url)
-    const team = loadData().teams.find((t) => t.id.toLowerCase() === u.hostname.toLowerCase())
+    const o = orch.list().find((x) => x.id.toLowerCase() === u.hostname.toLowerCase())
     const rel = decodeURIComponent(u.pathname.replace(/^\/+/, ''))
-    const abs = team ? safeJoin(team.workdir, rel) : null
+    const abs = o ? safeJoin(o.workdir, rel) : null
     if (!abs || !existsSync(abs)) return new Response('Bulunamadı', { status: 404 })
     return net.fetch(pathToFileURL(abs).toString(), { headers: req.headers })
   })

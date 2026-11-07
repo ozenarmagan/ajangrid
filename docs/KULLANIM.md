@@ -14,17 +14,17 @@ Ajanlar farklı "motorlarla" çalışabilir:
 
 ## 1. Temel kavramlar
 
-**Ekip**
-Birlikte çalışan ajanlar grubu. Her ekibin bir **çalışma klasörü** vardır. Ajanlar dosyaları bu klasörde okur ve yazar. Farklı işler için farklı ekipler kurabilirsin: "Blog → Video", "Lead Bulma", "Haftalık Rapor" gibi.
-
 **Yönetici**
-Ekibin şefi. Hedefini alır, plan yapar, görevleri alt ajanlara dağıtır ve çıktıları denetler. Bir çıktıyı yetersiz bulursa aynı ajana düzeltme gönderir. Bir ekipte yalnızca bir yönetici olabilir.
+Tek bir yönetici vardır ve bütün işleri o yürütür. Hedefini alır, plan yapar, görevleri **ajan havuzundaki** uygun ajanlara dağıtır ve çıktıları denetler. Bir çıktıyı yetersiz bulursa aynı ajana düzeltme gönderir.
 
-**Alt ajan**
-Belirli bir işi yapan ajan: özetleyici, senarist, video yapımcısı, seslendirmen gibi. Her alt ajanın bir **rolü** (talimatları), bir **motoru**, bir **modeli** ve **izinleri** vardır.
+**Ajan havuzu ve alt ajanlar**
+Bütün alt ajanlar tek bir havuzda durur: özetleyici, senarist, video yapımcısı, seslendirmen, lead araştırmacısı gibi. Ekip kurman gerekmez. Yönetici her hedefte yalnızca o işe uygun ajanları seçer. Her alt ajanın bir **rolü** (talimatları), bir **motoru**, bir **modeli** ve **izinleri** vardır.
 
-**Hedef ve döngü**
-Yöneticiye verdiğin göreve **hedef** denir. Yöneticinin bu hedef için yürüttüğü "planla → görev ver → kontrol et" sürecine **döngü** denir. Döngü bittiğinde yönetici bir **sonuç özeti** yazar.
+**Hedef**
+Yöneticiye verdiğin işe **hedef** denir. Her hedef sol menüde **Hedefler** listesinde ayrı bir sohbet olarak durur. Yöneticinin bu hedef için yürüttüğü "planla → görev ver → kontrol et" sürecine **döngü** denir. Döngü bittiğinde yönetici bir **sonuç özeti** yazar. Bitmiş bir hedefe yeni mesaj yazarak devam ettirebilirsin.
+
+**Hedef klasörü**
+Her hedef kendi klasöründe çalışır. Varsayılan olarak `~/AjanGrid/isler/` altında tarih ve hedef adıyla yeni bir klasör açılır (ör. `2026-11-07-blog-videosu`). Ajanlar dosyaları bu klasörde okur ve yazar, böylece farklı işlerin dosyaları birbirine karışmaz. İstersen hedefi başlatmadan önce var olan bir klasör de seçebilirsin.
 
 **Motor**
 Bir ajanın arkasında çalışan yapay zekâ:
@@ -107,21 +107,23 @@ Masaüstü bildirimlerini aynı bölümdeki kutucukla açıp kapatabilirsin.
 
 ---
 
-## 3. İlk ekibini kur
+## 3. Ajan havuzunu doldur
 
-Sol menüde **Ekipler** başlığının yanındaki **+** düğmesine bas. Üç yol var:
+Hiçbir şey yapmadan da başlayabilirsin: yöneticiye hedefini yaz. Havuzda bu iş için uygun ajan yoksa yönetici **yeni ajanlar önerir**, sen onaylayınca havuza eklenir. En kolay yol budur.
 
-1. **Şablondan:** "Blog → Video" şablonu 6 ajanı rolleriyle birlikte hazır kurar: yönetici, özetleyici, senarist, video yapımcısı, seslendirmen ve montajcı.
-2. **Boş ekip:** Yalnızca yönetici ile başlar. Yöneticiye hedefini yazdığında, ekipte uygun ajan yoksa **bir ekip önerir**. Sen onaylayınca ajanlar oluşturulur. En kolay yol budur.
-3. **Dosyadan içe aktar:** Daha önce dışa aktarılmış bir ekip şablonunu (`.ajangrid.json`) yükler.
+Diğer yollar sol menüde **Ajan havuzu** başlığının yanındaki **⇩** düğmesinde:
 
-Her yolda ekibin çalışma klasörünü seçmen istenir. Bu klasör için boş ya da yalnızca bu işe ait bir klasör seç. Ajanlar bu klasörde dosya oluşturup değiştirecek.
+1. **Blog → Video ajanlarını ekle:** Özetleyici, senarist, video yapımcısı, seslendirmen ve montajcıyı rolleriyle birlikte havuza ekler.
+2. **Dosyadan ajan ekle…:** Daha önce dışa aktarılmış bir ajan paketini (`.ajangrid.json`) yükler. Eski sürümün ekip dosyaları da çalışır.
+3. **+** düğmesi: Ajanı kendin tanımlarsın (bkz. Bölüm 7).
 
 ---
 
 ## 4. Yöneticiye hedef vermek
 
-**Komuta Merkezi**'nde alttaki kutuya hedefini yaz ve **Başlat**'a bas (ya da Ctrl/⌘+Enter).
+Sol menüde **+ Yeni hedef**'e bas, alttaki kutuya hedefini yaz ve **Enter**'a bas. Yeni satır için **Shift+Enter** kullan.
+
+Başlattığın hedef sol menüdeki **Hedefler** listesine eklenir. Birden fazla hedef aynı anda çalışabilir; biri onay beklerken diğeri devam eder. Listedeki noktanın rengi durumu gösterir: yeşil çalışıyor, sarı senden yanıt bekliyor, mor tamamlandı, kırmızı hata.
 
 ### İyi bir hedef nasıl yazılır?
 
@@ -138,19 +140,38 @@ Ton samimi olsun, Türkçe seslendirme olsun, sonuna hngbilisim.com yazsın.
 Final dosya outputs/final.mp4 olsun.
 ```
 
-### Dosya ve bağlantı eklemek
+### Dosya, görsel ve bağlantı eklemek
 
-Bir dosyayı ya da bağlantıyı hedef kutusuna **sürükleyip bırak**. Dosyalar ekip klasöründeki `kaynak/` altına kopyalanır ve hedef metnine eklenir. Böylece yönetici ve ajanlar o dosyayı görür.
+Mesajına üç yolla dosya ekleyebilirsin:
 
-### Onay iste
+- Kutunun solundaki **📎 ataç** düğmesiyle dosya seç.
+- Dosyayı kutuya **sürükleyip bırak**.
+- Bir görseli kopyalayıp kutuya **yapıştır** (⌘V / Ctrl+V). Ekran görüntüleri de olur.
 
-Hedef kutusunun altında ekibin ajanları düğme olarak listelenir. Bir ajanın düğmesine basarsan (sarı olur), o ajana görev gitmeden önce senin onayın istenir. Bu seçim ekip için kaydedilir.
+Eklenen dosyalar kutunun üstünde küçük etiketler olarak görünür; ✕ ile çıkarabilirsin. Gönderdiğinde dosyalar hedef klasöründeki `kaynak/` altına kopyalanır ve mesajın sonuna yazılır. Böylece yönetici ve ajanlar o dosyayı görür. Bir bağlantıyı sürüklersen mesaja metin olarak eklenir.
+
+### Klasör seçmek
+
+Yeni hedef ekranında kutunun altındaki **Klasör: yeni** düğmesiyle var olan bir klasör seçebilirsin (ör. bir web sitesi projesi). Seçmezsen hedef için yeni bir klasör açılır.
+
+### Onay noktaları
+
+Kutunun altındaki **Onay noktaları** düğmesi havuzdaki ajanları listeler. Bir ajanı seçersen (sarı olur), o ajana görev gitmeden önce senin onayın istenir. Bu seçim bütün hedefler için geçerlidir.
+
+### Hedefle konuşmaya devam etmek
+
+Aynı kutu her durumda yöneticiye yazmak içindir:
+
+- **Yönetici soru sorduysa:** yazdığın şey yanıt olur.
+- **Onay bekliyorsa:** sarı karttaki **Onayla** düğmesine bas ya da kutuya yazarak düzeltme iste.
+- **Hedef bittiyse ya da durduysa:** yazdığın şey yeni talimat olur ve yönetici aynı klasörde, önceki işi hatırlayarak devam eder. Örneğin "videoyu 30 saniyeye kısalt".
+- **Yönetici çalışıyorsa:** kutu kapalıdır; **Durdur** düğmesi görünür.
 
 ---
 
 ## 5. Süreci izlemek
 
-Komuta Merkezi iki bölümden oluşur: solda yönetici, sağda **Ekip** paneli.
+Komuta Merkezi iki bölümden oluşur: solda seçili hedefle ilgili yöneticiyle konuşman, sağda **ajanlar** paneli.
 
 ### 5.1 Akış görünümü
 
@@ -175,9 +196,9 @@ Yönetici başlığındaki **Akış / Kanban** düğmesiyle geçersin. Görevler
 
 Üstteki **Gösterilen hedef** listesinden belirli bir hedefi ya da tümünü seçebilirsin. Bir karta tıklayınca o ajanın çıktısı sağ panelde açılır.
 
-### 5.3 Ekip paneli (sağ taraf)
+### 5.3 Ajanlar paneli (sağ taraf)
 
-Her alt ajan için bir kart vardır. Kartta ajanın durumu, süresi, son görevi ve çıktısının son satırları görünür. Karta tıklayınca:
+Bir hedef seçiliyse üstte **o hedefte görev alan ajanlar** görünür; havuzdaki diğerleri altta katlanmış listededir. Kartlar yalnızca bu hedefe ait çalışmaları gösterir. Yeni hedef ekranında bütün havuz görünür. Kartta ajanın durumu, süresi, son görevi ve çıktısının son satırları görünür. Karta tıklayınca:
 
 - Çıktının tamamı okunur biçimde açılır.
 - **Ham terminal:** Ajanın gerçek terminal çıktısını gösterir.
@@ -188,7 +209,7 @@ Sol menüde bir ajanın adına tıklamak da onun kartını açar.
 
 ### 5.4 Dosyalar
 
-Ekip panelinin altındaki **Dosyalar** bölümü ekip klasörünü gösterir. Bir klasöre tıklayınca içine girersin. Bir dosyaya tıklayınca uygulama içinde **önizleme** açılır: metinler okunur, görseller gösterilir, video ve ses oynatılır. **Uygulamada aç** düğmesi dosyayı varsayılan programda açar.
+Panelin altındaki **Bu hedefin dosyaları** bölümü hedef klasörünü gösterir; klasörün tam yolu da altında yazar. Bir klasöre tıklayınca içine girersin. Bir dosyaya tıklayınca uygulama içinde **önizleme** açılır: metinler okunur, görseller gösterilir, video ve ses oynatılır. **Uygulamada aç** düğmesi dosyayı varsayılan programda açar.
 
 ---
 
@@ -196,14 +217,14 @@ Ekip panelinin altındaki **Dosyalar** bölümü ekip klasörünü gösterir. Bi
 
 Yönetici bazı durumlarda durur ve sana sarı bir kart gösterir:
 
-| Kart                   | Ne zaman?                                                  | Ne yaparsın?                                                                       |
-| ---------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| **Onay noktası**       | Onay iste dediğin bir ajana görev gidecekken               | **Onayla, devam et** ya da kutuya düzeltme yazıp **Düzeltme iste**                 |
-| **Ekip önerisi**       | Ekipte uygun ajan yokken yönetici yeni ajanlar önerdiğinde | Önerilen ajanları incele ve **Ekibi oluştur, devam et**. Değişiklik istiyorsan yaz |
-| **Yöneticinin sorusu** | Yöneticinin karar veremediği bir nokta olduğunda           | Yanıtını yaz ve **Yanıtla**                                                        |
-| **Limit doldu**        | Bir ajanın aboneliği dolduğunda                            | Ne yapılacağını yaz: "bekle", "X ajanını kullan", "bu adımı atla"                  |
+| Kart                   | Ne zaman?                                                   | Ne yaparsın?                                                                          |
+| ---------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| **Onay noktası**       | Onay iste dediğin bir ajana görev gidecekken                | **Onayla, devam et** ya da alttaki kutuya düzeltme yazıp gönder                       |
+| **Yeni ajan önerisi**  | Havuzda uygun ajan yokken yönetici yeni ajanlar önerdiğinde | Önerilen ajanları incele ve **Ajanları oluştur, devam et**. Değişiklik istiyorsan yaz |
+| **Yöneticinin sorusu** | Yöneticinin karar veremediği bir nokta olduğunda            | Yanıtını alttaki kutuya yaz ve Enter                                                  |
+| **Limit doldu**        | Bir ajanın aboneliği dolduğunda                             | Ne yapılacağını yaz: "bekle", "X ajanını kullan", "bu adımı atla"                     |
 
-Ekip önerisinde ⚠ işareti görürsen dikkat et. Örneğin "codex bu bilgisayarda bulunamadı" yazıyorsa o ajan çalışmaz. Onaylamadan önce düzeltme iste ya da sonradan ajanın motorunu değiştir.
+Ajan önerisinde ⚠ işareti görürsen dikkat et. Örneğin "codex bu bilgisayarda bulunamadı" yazıyorsa o ajan çalışmaz. Onaylamadan önce düzeltme iste ya da sonradan ajanın motorunu değiştir.
 
 Telegram eşleştirdiysen aynı sorular telefonuna da gelir. Düğmeyle onaylarsın, düzeltmeyi mesaj olarak yazarsın.
 
@@ -230,7 +251,7 @@ Sol menüde **Ajanlar**'a gir ya da bir ajan kartında **Ayarlar**'a bas.
 
 Sağdaki **Çalıştırılacak komut** kutusu, bu ajan için bilgisayarında tam olarak hangi komutun çalışacağını gösterir. Bir ajan hata verirse önce buraya bak.
 
-**Test et** düğmesi ajana kısa bir bağlantı testi gönderir. Sonucu Komuta Merkezi'nin ekip panelinde görürsün.
+**Test et** düğmesi ajana kısa bir bağlantı testi gönderir. Sonucu Komuta Merkezi'nde, yeni hedef ekranının ajanlar panelinde görürsün.
 
 ---
 
@@ -271,29 +292,27 @@ Claude Code ajanları aynı hedef boyunca **önceki işlerini hatırlar**. Yöne
 
 Tekrarlanan işler için (ör. her pazartesi 09:00'da haftalık rapor):
 
-1. Hedef kutusuna hedefi yaz.
+1. **+ Yeni hedef** ekranında kutuya hedefi yaz.
 2. **Zamanla** düğmesine bas.
 3. Günleri ve saati seç, sonra **Zamanla**'ya bas.
 
-Zamanlanmış hedefler aynı panelde listelenir. Kutucukla geçici olarak kapatabilir, çöp kutusuyla silebilirsin. Zamanlanmış hedefler yalnızca **AjanGrid açıkken** çalışır. O saatte ekipte süren bir iş varsa o seferlik atlanır ve bildirim gelir.
+Zamanlanmış hedefler aynı panelde listelenir. Kutucukla geçici olarak kapatabilir, çöp kutusuyla silebilirsin. Zamanlanmış hedefler yalnızca **AjanGrid açıkken** çalışır. Her çalışmada yeni bir hedef klasörü açılır ve hedef listeye eklenir.
 
 ---
 
-## 11. Ekip yönetimi
+## 11. Hedefleri ve havuzu yönetmek
 
-Sol menüde fareyle bir ekibin üzerine gelince üç simge çıkar:
+- **Hedef silmek:** Sol menüde fareyle bir hedefin üzerine gelince 🗑 simgesi çıkar. Hedef listeden silinir, sürüyorsa durdurulur. Klasördeki dosyalara dokunulmaz.
+- **Ajanları dışa aktar:** **Ajan havuzu → ⇩ → Ajanları dışa aktar…** yönetici dışındaki ajanları, kullandıkları yerel araçları ve MCP sunucularını tek bir `.ajangrid.json` dosyasına kaydeder. Bu dosyayı başka bir bilgisayara ya da bir müşteriye verebilirsin. Şifre ve anahtar gibi gizli değerler dosyaya yazılmaz.
+- **İçe aktar:** **Ajan havuzu → ⇩ → Dosyadan ajan ekle…** Aynı adlı ajan varsa yenisinin adının sonuna sayı eklenir.
 
-- **✏️ Yeniden adlandır**
-- **⇩ Dışa aktar:** Ekibi, ajanları, kullandığı yerel araçları ve MCP sunucularını tek bir `.ajangrid.json` dosyasına kaydeder. Bu dosyayı başka bir bilgisayara ya da bir müşteriye verebilirsin. Şifre ve anahtar gibi gizli değerler dosyaya yazılmaz.
-- **🗑 Sil:** Ekibi ve ajanlarını siler, süren işleri durdurur. Klasördeki dosyalara dokunmaz. Son kalan ekip silinemez.
-
-İçe aktarmak için **Ekipler → + → Dosyadan içe aktar…** yolunu izle.
+**Eski sürümden geçiş:** Ekipli sürümden güncellediğinde bütün ekiplerin ajanları tek havuzda birleşir. Aynı adlı ajanların adına ekip adı eklenir (ör. "Yazar (Blog)"). Aktif ekibin yöneticisi kalır; diğer ekiplerin yöneticileri havuza alınmaz. Eski veri dosyası `ajangrid.v1-yedek.json` adıyla yedeklenir. Eski hedefler listede görünür ve dosyaları eski ekip klasörlerinde kalır.
 
 ---
 
 ## 12. Güvenlik ve maliyet ipuçları
 
-- **Klasör:** Ekip klasörü olarak önemli belgelerinin bulunduğu bir klasörü seçme. Ajanlar bu klasörde dosya yazıp silebilir.
+- **Klasör:** Var olan bir klasör seçeceksen önemli belgelerinin bulunduğu bir klasörü seçme. Ajanlar bu klasörde dosya yazıp silebilir. Emin değilsen yeni klasörde başlat.
 - **İzinler:** "Dosya yazma + komut çalıştırma" birlikte açık olan bir ajan klasörde her şeyi yapabilir. Bu ikisini yalnızca gerçekten gereken ajanlarda aç.
 - **Maliyet:** Yönetici için yüksek efor iyidir. Alt ajanlarda düşük ya da orta efor çoğu iş için yeterlidir ve limitini korur.
 - **API harcaması:** Günlük tavan koy.
@@ -315,7 +334,7 @@ Sol menüde fareyle bir ekibin üzerine gelince üç simge çıkar:
 | Telegram mesajı gelmiyor                  | AjanGrid açık mı? Motorlar ekranında "eşleşti" yazıyor mu? **Test mesajı gönder**'i dene.                                |
 | Önizleme açılmıyor                        | O dosya türü desteklenmiyor olabilir. **Uygulamada aç** düğmesini kullan.                                                |
 
-Her çalışmanın tam kaydı, ekip klasöründeki `.ajangrid/runs/` altında `.log` dosyası olarak durur.
+Her çalışmanın tam kaydı, hedef klasöründeki `.ajangrid/runs/` altında `.log` dosyası olarak durur.
 
 ---
 
@@ -325,13 +344,13 @@ Her çalışmanın tam kaydı, ekip klasöründeki `.ajangrid/runs/` altında `.
 AjanGrid yönetici merkezlidir: işleri yöneticiye verirsin. Bir ajanı tek başına denemek için Ajanlar ekranındaki **Test et** düğmesini kullan.
 
 **Aynı anda birden fazla hedef çalıştırabilir miyim?**
-Her ekipte aynı anda bir döngü çalışır. Farklı ekiplerde aynı anda farklı hedefler yürüyebilir.
+Evet. Her hedef kendi klasöründe ayrı yürür. Aynı ajan iki hedefte aynı anda görev alabilir; aboneliğinin limitini ikisi birlikte harcar.
 
 **Ajanlar birbirinin çıktısını nasıl görüyor?**
-Ortak çalışma klasörü üzerinden. Yönetici görev verirken hangi dosyanın okunup hangisine yazılacağını söyler. API ajanlarının yanıtları otomatik olarak `outputs/` klasörüne kaydedilir.
+Hedefin ortak klasörü üzerinden. Yönetici görev verirken hangi dosyanın okunup hangisine yazılacağını söyler. API ajanlarının yanıtları otomatik olarak `outputs/` klasörüne kaydedilir.
 
 **Verilerim nerede?**
-Ekipler, ajanlar ve ayarlar bilgisayarındaki uygulama veri klasöründe durur. API anahtarları ve Telegram anahtarı şifreli olarak saklanır. Ajanların ürettiği her şey ekip klasöründedir.
+Ajanlar, hedef kayıtları ve ayarlar bilgisayarındaki uygulama veri klasöründe durur. API anahtarları ve Telegram anahtarı şifreli olarak saklanır. Ajanların ürettiği her şey hedef klasöründedir.
 
 **Uygulama kapanınca iş durur mu?**
 Evet. Süren işler durdurulur. Yeniden açınca **Kaldığı yerden devam et** ile sürdürebilirsin.
@@ -347,6 +366,7 @@ Evet. Süren işler durdurulur. Yeniden açınca **Kaldığı yerden devam et** 
 | **Token**         | Modelin işlediği metin parçası. Ücretlendirme buna göre yapılır.                                              |
 | **Efor**          | Modelin bir işe ne kadar "düşünerek" yaklaşacağı.                                                             |
 | **Döngü**         | Yöneticinin bir hedef için planlama, görev verme ve kontrol süreci.                                           |
+| **Ajan havuzu**   | Yöneticinin görev verebileceği bütün alt ajanlar.                                                             |
 | **Onay noktası**  | Belirli bir ajana görev gitmeden önce senin onayının istendiği yer.                                           |
 | **Anlık görüntü** | Klasörün belirli bir andaki kaydı. Geri almak için kullanılır.                                                |
 | **MCP**           | Model Context Protocol. Ajanların dış araçlara (Drive, n8n vb.) bağlanma standardı.                           |

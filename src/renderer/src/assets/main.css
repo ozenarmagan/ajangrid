@@ -402,6 +402,10 @@ table.tbl td {
   background: transparent;
   color: var(--text3);
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
   min-height: 28px;
 }
 .chip.on {

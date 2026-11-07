@@ -1,37 +1,39 @@
-import type { Agent, AppData, LocalTool, McpServer, Team } from '../shared/types'
+import type { Agent, AppData, LocalTool, McpServer } from '../shared/types'
 import { newId } from './store'
 
-// Ekip şablonu dosyası (*.ajangrid.json): ekip, ajanlar, kullandıkları yerel araçlar
-// ve MCP sunucuları. Kimlikler ve klasör yolları taşınmaz; gizli değerler çıkarılır.
+// Ajan paketi dosyası (*.ajangrid.json): ajanlar, kullandıkları yerel araçlar ve MCP
+// sunucuları. Kimlikler ve klasör yolları taşınmaz; gizli değerler çıkarılır.
+// Eski sürümün ekip dosyaları (ajangrid: 1) da içe aktarılabilir.
 
-export interface TeamFile {
-  ajangrid: 1
+type AgentEntry = Omit<Agent, 'id' | 'createdAt' | 'localToolId' | 'workdir'> & {
+  localTool?: string
+}
+
+export interface AgentPackFile {
+  ajangrid: 1 | 2
   name: string
   checkpoints: string[]
-  agents: Array<
-    Omit<Agent, 'id' | 'teamId' | 'createdAt' | 'localToolId' | 'workdir'> & { localTool?: string }
-  >
+  agents: AgentEntry[]
   localTools: Array<Omit<LocalTool, 'id'>>
   mcpServers: McpServer[]
 }
 
-export function exportTeam(data: AppData, teamId: string): TeamFile {
-  const team = data.teams.find((t) => t.id === teamId)
-  if (!team) throw new Error('Ekip bulunamadı.')
+/** Seçilen ajanları (boşsa yönetici dışındaki tümünü) dışa aktarır. */
+export function exportAgents(data: AppData, ids?: string[]): AgentPackFile {
   const agents = data.agents
-    .filter((a) => a.teamId === teamId)
+    .filter((a) => (ids?.length ? ids.includes(a.id) : !a.isManager))
     .sort((a, b) => a.createdAt - b.createdAt)
   const toolIds = new Set(agents.map((a) => a.localToolId).filter(Boolean))
   const mcpNames = new Set(agents.flatMap((a) => a.mcpServers ?? []))
   return {
-    ajangrid: 1,
-    name: team.name,
-    checkpoints: (team.checkpoints ?? [])
+    ajangrid: 2,
+    name: 'AjanGrid ajanları',
+    checkpoints: (data.settings.checkpoints ?? [])
       .map((id) => agents.find((a) => a.id === id)?.name)
       .filter((n): n is string => Boolean(n)),
     agents: agents.map((a) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { id, teamId: _t, createdAt, localToolId, workdir, ...rest } = a
+      const { id, createdAt, localToolId, workdir, ...rest } = a
       const tool = data.localTools.find((t) => t.id === localToolId)
       return { ...rest, ...(tool ? { localTool: tool.name } : {}) }
     }),
@@ -49,18 +51,13 @@ export function exportTeam(data: AppData, teamId: string): TeamFile {
   }
 }
 
-/** Şablonu veriye ekler (yerinde değiştirir) ve oluşan ekibi döner. */
-export function importTeam(
-  data: AppData,
-  raw: unknown,
-  workdir: string
-): { team: Team; warnings: string[] } {
-  const f = raw as Partial<TeamFile>
-  if (!f || f.ajangrid !== 1 || !Array.isArray(f.agents) || !f.name) {
-    throw new Error('Bu dosya bir AjanGrid ekip şablonu değil.')
+/** Paketteki ajanları havuza ekler (yerinde değiştirir). */
+export function importAgents(data: AppData, raw: unknown): { added: string[]; warnings: string[] } {
+  const f = raw as Partial<AgentPackFile>
+  if (!f || (f.ajangrid !== 1 && f.ajangrid !== 2) || !Array.isArray(f.agents)) {
+    throw new Error('Bu dosya bir AjanGrid ajan paketi değil.')
   }
   const warnings: string[] = []
-  const team: Team = { id: newId(), name: String(f.name).slice(0, 60), workdir, checkpoints: [] }
 
   // Yerel araçlar: aynı adlı araç varsa onu kullan, yoksa ekle
   const toolIdByName = new Map<string, string>()
@@ -88,15 +85,27 @@ export function importTeam(
       warnings.push(`"${m.name}" MCP sunucusunun ortam değişkenlerini Motorlar ekranından doldur.`)
   }
 
+  const used = new Set(data.agents.map((a) => a.name.toLocaleLowerCase('tr')))
+  const hasManager = data.agents.some((a) => a.isManager)
   const now = Date.now()
   const created: Agent[] = []
   f.agents.forEach((a, i) => {
     if (!a?.name) return
-    const { localTool, ...rest } = a
+    // Havuzda tek yönetici olur; paketteki yönetici atlanır
+    if (a.isManager && (hasManager || created.some((c) => c.isManager))) {
+      warnings.push(`"${a.name}" yönetici olduğu için eklenmedi (zaten bir yönetici var).`)
+      return
+    }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { localTool, teamId, ...rest } = a as AgentEntry & { teamId?: string }
+    let name = a.name
+    for (let n = 2; used.has(name.toLocaleLowerCase('tr')); n++) name = `${a.name} ${n}`
+    if (name !== a.name) warnings.push(`"${a.name}" adı kullanılıyordu; "${name}" olarak eklendi.`)
+    used.add(name.toLocaleLowerCase('tr'))
     const agent: Agent = {
-      ...(rest as Omit<Agent, 'id' | 'teamId' | 'createdAt'>),
+      ...(rest as Omit<Agent, 'id' | 'createdAt'>),
+      name,
       id: newId(),
-      teamId: team.id,
       createdAt: now + i,
       permissions: a.permissions ?? { write: true, shell: false, network: false },
       localToolId: localTool ? toolIdByName.get(localTool) : undefined
@@ -105,18 +114,10 @@ export function importTeam(
       warnings.push(`"${agent.name}" için yerel araç bulunamadı.`)
     created.push(agent)
   })
-  // Tek yönetici kuralı
-  let seenManager = false
-  for (const a of created) {
-    if (a.isManager) {
-      if (seenManager) a.isManager = false
-      seenManager = true
-    }
-  }
-  team.checkpoints = (f.checkpoints ?? [])
+  const cps = (f.checkpoints ?? [])
     .map((n) => created.find((a) => a.name === n)?.id)
     .filter((x): x is string => Boolean(x))
-  data.teams.push(team)
+  data.settings.checkpoints = [...(data.settings.checkpoints ?? []), ...cps]
   data.agents.push(...created)
-  return { team, warnings }
+  return { added: created.map((a) => a.name), warnings }
 }

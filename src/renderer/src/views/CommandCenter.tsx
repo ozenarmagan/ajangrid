@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { Theme } from '../../../shared/types'
 import { TeamPanel } from '../components/TeamPanel'
-import { useActiveTeam, useStore, useTeamAgents } from '../store'
+import { useAgents, useStore } from '../store'
 import { cleanError } from '../util'
 import { ManagerPanel, type ManagerMode } from './ManagerPanel'
 
@@ -12,7 +12,7 @@ interface Props {
   onEditAgent: (id: string) => void
 }
 
-/** Ana ekran: solda yönetici ile konuşma, sağda ekibin ne yaptığı. */
+/** Ana ekran: solda yönetici ile konuşma, sağda ajanların ne yaptığı. */
 export function CommandCenter({
   focusId,
   setFocusId,
@@ -20,20 +20,17 @@ export function CommandCenter({
   onEditAgent
 }: Props): React.JSX.Element {
   const { setError } = useStore()
-  const agents = useTeamAgents()
-  const team = useActiveTeam()
+  const agents = useAgents()
   const manager = agents.find((a) => a.isManager)
   const [mode, setMode] = useState<ManagerMode>('flow')
 
   const createManager = async (): Promise<void> => {
-    if (!team) return
     try {
       await window.api.agents.save({
         id: '',
-        teamId: team.id,
         name: 'Yönetici',
         title: 'Hedefi adımlara böler, ajanlara dağıtır, çıktıları denetler',
-        role: 'Sen bu ekibin yöneticisisin. Kalite çıtan yüksek olsun; gereksiz adım ekleme.',
+        role: 'Sen yöneticisin. Kalite çıtan yüksek olsun; gereksiz adım ekleme.',
         isManager: true,
         color: '#c4b5fd',
         engine: 'cli',
@@ -71,8 +68,8 @@ export function CommandCenter({
           }}
         >
           <div className="muted" style={{ maxWidth: 420, textAlign: 'center', lineHeight: 1.6 }}>
-            Bu ekipte yönetici yok. Tüm işi yönetici üzerinden yürütmek için bir yönetici oluştur;
-            gereken alt ajanları o önerecek.
+            Yönetici yok. Tüm işi yönetici üzerinden yürütmek için bir yönetici oluştur; gereken alt
+            ajanları o önerecek.
           </div>
           <button className="btn btn-p" onClick={createManager}>
             Yönetici oluştur (Claude Code · Opus)

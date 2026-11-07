@@ -81,10 +81,9 @@ export function cleanError(err: unknown): string {
   return m.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
 }
 
-export function blankAgent(teamId: string, index: number): Agent {
+export function blankAgent(index: number): Agent {
   return {
     id: '',
-    teamId,
     name: '',
     title: '',
     role: '',

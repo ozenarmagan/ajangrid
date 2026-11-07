@@ -283,18 +283,9 @@ export class TelegramBot {
     if (text.startsWith('/hedef')) {
       const goal = text.replace(/^\/hedef(@\w+)?\s*/, '').trim()
       if (!goal) return this.send('Kullanım: /hedef <yöneticiye verilecek hedef>')
-      const data = loadData()
-      const teamId = data.settings.activeTeamId ?? data.teams[0]?.id
-      const team = data.teams.find((t) => t.id === teamId)
-      if (!team) return this.send('Aktif ekip yok.')
-      if (this.orch.active().some((o) => o.teamId === team.id)) {
-        return this.send(
-          `"${team.name}" ekibinde süren bir iş var. Önce bitmesini bekle ya da durdur.`
-        )
-      }
       try {
-        this.orch.start(team.id, goal, team.checkpoints)
-        return this.send(`"${team.name}" ekibine hedef verildi. Onay gerektiğinde yazacağım.`)
+        this.orch.start(goal)
+        return this.send('Hedef yöneticiye verildi. Onay gerektiğinde yazacağım.')
       } catch (err) {
         return this.send(`Başlatılamadı: ${(err as Error).message}`)
       }
@@ -305,7 +296,7 @@ export class TelegramBot {
       if (!act.length) return this.send('Süren iş yok.')
       const data = loadData()
       const lines = act.map((o) => {
-        const team = data.teams.find((t) => t.id === o.teamId)?.name ?? '?'
+        const team = o.title
         const last = [...o.steps].reverse().find((s) => s.kind === 'task')
         const ag = data.agents.find((a) => a.id === last?.agentId)?.name
         return `• ${team}: ${o.status === 'waiting' ? 'yanıtını bekliyor' : 'çalışıyor'}\n  Hedef: ${clip(o.goal, 120)}${ag ? `\n  Son görev: ${ag} — ${clip(last?.task ?? '', 120)}` : ''}`
@@ -317,9 +308,15 @@ export class TelegramBot {
     const waiting = this.orch.active().filter((o) => o.status === 'waiting' && o.question)
     const target = waiting[waiting.length - 1]
     if (!target?.question) {
-      return this.send(
-        'Şu an yanıt bekleyen bir soru yok.\n\n/hedef <metin> — yeni hedef\n/durum — süren işler'
-      )
+      // Bekleyen soru yoksa düz mesaj yeni hedef olur
+      try {
+        this.orch.start(text)
+        return this.send(
+          'Yeni hedef yöneticiye verildi. Onay gerektiğinde yazacağım.\n\n/durum — süren işler'
+        )
+      } catch (err) {
+        return this.send(`Başlatılamadı: ${(err as Error).message}`)
+      }
     }
     const kind = target.question.kind
     if (kind === 'approval' || kind === 'team')
@@ -334,15 +331,14 @@ export class TelegramBot {
 
   private async onOrchEvent(kind: OrchEvent, o: Orchestration): Promise<void> {
     if (!this.chatId()) return
-    const data = loadData()
-    const team = data.teams.find((t) => t.id === o.teamId)?.name ?? 'Ekip'
+    const team = o.title
     if (kind === 'question' && o.question) {
       const q = o.question
       const head =
         q.kind === 'approval'
           ? '🟡 Onay gerekiyor'
           : q.kind === 'team'
-            ? '🟡 Ekip önerisi'
+            ? '🟡 Yeni ajan önerisi'
             : q.kind === 'limit'
               ? '🟠 Limit doldu'
               : '❓ Yöneticinin sorusu'

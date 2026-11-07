@@ -1,6 +1,6 @@
 {
   "name": "ajangrid",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Yönetici + alt ajanlardan oluşan ajan sistemlerini CLI abonelikleri, API anahtarları ve yerel araçlarla kurup çalıştıran masaüstü uygulaması.",
   "main": "./out/main/index.js",
   "author": "Armağan Özen",

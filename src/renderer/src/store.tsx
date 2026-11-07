@@ -17,6 +17,10 @@ interface Store {
   error: string | null
   setError: (e: string | null) => void
   orchs: Orchestration[]
+  /** Seçili hedef (null = yeni hedef ekranı) */
+  orchId: string | null
+  setOrchId: (id: string | null) => void
+  dropOrch: (id: string) => void
 }
 
 const Ctx = createContext<Store | null>(null)
@@ -33,7 +37,7 @@ export function StoreProvider({ children }: { children: ReactNode }): React.JSX.
   const [outputTick, setOutputTick] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [orchs, setOrchs] = useState<Orchestration[]>([])
-  const activeTeamId = data?.settings.activeTeamId ?? data?.teams[0]?.id ?? null
+  const [orchId, setOrchId] = useState<string | null>(null)
   const outputs = useRef(new Map<string, string>())
   const listeners = useRef(new Set<ChunkListener>())
   const tickPending = useRef(false)
@@ -87,10 +91,9 @@ export function StoreProvider({ children }: { children: ReactNode }): React.JSX.
     }
   }, [])
 
-  // Ekip değişince o ekibin geçmiş yönetici döngülerini yükle
+  // Geçmiş hedefleri bir kez yükle
   useEffect(() => {
-    if (!activeTeamId) return
-    window.api.orch.list(activeTeamId).then((list) => {
+    window.api.orch.list().then((list) => {
       setOrchs((prev) => {
         const map = new Map(prev.map((o) => [o.id, o]))
         list.forEach((o) => {
@@ -99,7 +102,12 @@ export function StoreProvider({ children }: { children: ReactNode }): React.JSX.
         return [...map.values()].sort((a, b) => a.startedAt - b.startedAt)
       })
     })
-  }, [activeTeamId])
+  }, [])
+
+  const dropOrch = useCallback((id: string) => {
+    setOrchs((prev) => prev.filter((o) => o.id !== id))
+    setOrchId((cur) => (cur === id ? null : cur))
+  }, [])
 
   const outputOf = useCallback((runId: string) => outputs.current.get(runId) ?? '', [])
 
@@ -130,23 +138,36 @@ export function StoreProvider({ children }: { children: ReactNode }): React.JSX.
   }, [])
 
   const value = useMemo(
-    () => ({ data, runs, outputOf, outputTick, subscribeChunks, startRun, error, setError, orchs }),
-    [data, runs, outputOf, outputTick, subscribeChunks, startRun, error, orchs]
+    () => ({
+      data,
+      runs,
+      outputOf,
+      outputTick,
+      subscribeChunks,
+      startRun,
+      error,
+      setError,
+      orchs,
+      orchId,
+      setOrchId,
+      dropOrch
+    }),
+    [data, runs, outputOf, outputTick, subscribeChunks, startRun, error, orchs, orchId, dropOrch]
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 
-export function useTeamAgents(): Agent[] {
+/** Tüm ajanlar: önce yönetici, sonra eklenme sırası */
+export function useAgents(): Agent[] {
   const { data } = useStore()
   if (!data) return []
-  const teamId = data.settings.activeTeamId ?? data.teams[0]?.id
   return data.agents
-    .filter((a) => a.teamId === teamId)
+    .slice()
     .sort((a, b) => Number(b.isManager) - Number(a.isManager) || a.createdAt - b.createdAt)
 }
 
-export function useActiveTeam(): AppData['teams'][number] | undefined {
-  const { data } = useStore()
-  if (!data) return undefined
-  return data.teams.find((t) => t.id === data.settings.activeTeamId) ?? data.teams[0]
+/** Seçili hedef */
+export function useCurrentOrch(): Orchestration | undefined {
+  const { orchs, orchId } = useStore()
+  return orchs.find((o) => o.id === orchId)
 }
