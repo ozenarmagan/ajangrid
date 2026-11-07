@@ -137,6 +137,10 @@ function registerIpc(): void {
   })
 
   ipcMain.handle('teams:delete', (_e, id: string) => {
+    if (loadData().teams.length <= 1) throw new Error('Son ekip silinemez.')
+    // Süren yönetici döngülerini ve çalışmaları durdur
+    orch.list(id).forEach((o) => orch.stop(o.id))
+    runs.stopTeam(id)
     update((d) => {
       if (d.teams.length <= 1) return
       d.teams = d.teams.filter((t) => t.id !== id)

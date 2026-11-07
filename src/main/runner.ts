@@ -434,6 +434,11 @@ export class RunManager {
     for (const id of this.runs.keys()) this.stop(id)
   }
 
+  /** Bir ekibe ait süren tüm çalışmaları durdur. */
+  stopTeam(teamId: string): void {
+    for (const r of this.runs.values()) if (r.info.teamId === teamId) this.stop(r.info.id)
+  }
+
   /** Belirli bir yönetici döngüsüne ait süren çalışmaları durdur. */
   stopOrch(orchId: string): void {
     for (const r of this.runs.values()) if (r.info.orchId === orchId) this.stop(r.info.id)

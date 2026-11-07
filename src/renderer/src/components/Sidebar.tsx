@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import type { Theme } from '../../../shared/types'
 import { useActiveTeam, useStore, useTeamAgents } from '../store'
-import { agentState, engineLine, initialOf } from '../util'
-import { Logo, Moon, Plus, Sun } from './Icons'
+import { agentState, cleanError, engineLine, initialOf } from '../util'
+import { Logo, Moon, Pencil, Plus, Sun, Trash } from './Icons'
 
 export type View = 'command' | 'agents' | 'engines'
 
@@ -27,13 +27,41 @@ export function Sidebar({
   onSelectAgent,
   onNewAgent
 }: Props): React.JSX.Element {
-  const { data, runs } = useStore()
+  const { data, runs, setError } = useStore()
   const agents = useTeamAgents()
   const team = useActiveTeam()
   const [addingTeam, setAddingTeam] = useState(false)
   const [teamName, setTeamName] = useState('')
   const [templateId, setTemplateId] = useState('blog-video')
   const theme: Theme = data?.settings.theme ?? 'dark'
+
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+
+  const startRename = (id: string, name: string): void => {
+    setEditingId(id)
+    setEditName(name)
+  }
+
+  const saveRename = async (id: string): Promise<void> => {
+    const t = data?.teams.find((x) => x.id === id)
+    if (!t || !editName.trim()) return
+    await window.api.teams.save({ ...t, name: editName.trim() })
+    setEditingId(null)
+  }
+
+  const removeTeam = async (id: string, name: string): Promise<void> => {
+    const n = data?.agents.filter((a) => a.teamId === id).length ?? 0
+    const ok = window.confirm(
+      `"${name}" ekibi ve ${n} ajanı silinsin mi?\n\nSüren işler durdurulur. Çalışma klasöründeki dosyalar silinmez.`
+    )
+    if (!ok) return
+    try {
+      await window.api.teams.remove(id)
+    } catch (e) {
+      setError(cleanError(e))
+    }
+  }
 
   const toggleTheme = (): void => {
     window.api.settings.set({ theme: theme === 'dark' ? 'light' : 'dark' })
@@ -113,25 +141,89 @@ export function Sidebar({
         {data?.teams.map((t) => {
           const active = t.id === team?.id
           const busy = runs.some((r) => r.teamId === t.id && r.status === 'running')
+          if (editingId === t.id) {
+            return (
+              <div key={t.id} style={{ display: 'flex', gap: 4, padding: '2px 4px' }}>
+                <label htmlFor={`rn-${t.id}`} className="sr">
+                  Ekip adı
+                </label>
+                <input
+                  id={`rn-${t.id}`}
+                  className="inp"
+                  style={{ minHeight: 32, padding: '4px 8px' }}
+                  value={editName}
+                  autoFocus
+                  onChange={(e) => setEditName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') saveRename(t.id)
+                    if (e.key === 'Escape') setEditingId(null)
+                  }}
+                />
+                <button
+                  className="btn btn-sm btn-p"
+                  onClick={() => saveRename(t.id)}
+                  disabled={!editName.trim()}
+                >
+                  Kaydet
+                </button>
+              </div>
+            )
+          }
           return (
-            <button
+            <div
               key={t.id}
-              className="nav"
-              onClick={() => window.api.settings.set({ activeTeamId: t.id })}
-              style={
-                active
-                  ? {
-                      background: 'rgba(124,58,237,.14)',
-                      border: '1px solid rgba(139,92,246,.35)',
-                      color: 'var(--text-hi)',
-                      justifyContent: 'space-between'
-                    }
-                  : { justifyContent: 'space-between', border: '1px solid transparent' }
-              }
+              className="team-row"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                borderRadius: 8,
+                ...(active
+                  ? { background: 'rgba(124,58,237,.14)', border: '1px solid rgba(139,92,246,.35)' }
+                  : { border: '1px solid transparent' })
+              }}
             >
-              <span style={{ fontWeight: active ? 500 : 400 }}>{t.name}</span>
-              {busy ? <span className="badge b-cli">çalışıyor</span> : null}
-            </button>
+              <button
+                className="nav"
+                onClick={() => window.api.settings.set({ activeTeamId: t.id })}
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  background: 'transparent',
+                  color: active ? 'var(--text-hi)' : undefined
+                }}
+              >
+                <span
+                  style={{
+                    fontWeight: active ? 500 : 400,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  {t.name}
+                </span>
+                {busy ? <span className="badge b-cli">çalışıyor</span> : null}
+              </button>
+              <span className="team-act" style={{ display: 'flex', paddingRight: 4 }}>
+                <button
+                  className="ib"
+                  aria-label={`${t.name} ekibini yeniden adlandır`}
+                  title="Yeniden adlandır"
+                  onClick={() => startRename(t.id, t.name)}
+                >
+                  <Pencil />
+                </button>
+                <button
+                  className="ib"
+                  aria-label={`${t.name} ekibini sil`}
+                  title={(data?.teams.length ?? 0) <= 1 ? 'Son ekip silinemez' : 'Ekibi sil'}
+                  disabled={(data?.teams.length ?? 0) <= 1}
+                  onClick={() => removeTeam(t.id, t.name)}
+                >
+                  <Trash />
+                </button>
+              </span>
+            </div>
           )
         })}
         {addingTeam ? (

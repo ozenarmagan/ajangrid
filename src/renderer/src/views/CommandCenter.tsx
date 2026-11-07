@@ -1,8 +1,9 @@
+import { useState } from 'react'
 import type { Theme } from '../../../shared/types'
 import { TeamPanel } from '../components/TeamPanel'
 import { useActiveTeam, useStore, useTeamAgents } from '../store'
 import { cleanError } from '../util'
-import { ManagerPanel } from './ManagerPanel'
+import { ManagerPanel, type ManagerMode } from './ManagerPanel'
 
 interface Props {
   focusId: string | null
@@ -22,6 +23,7 @@ export function CommandCenter({
   const agents = useTeamAgents()
   const team = useActiveTeam()
   const manager = agents.find((a) => a.isManager)
+  const [mode, setMode] = useState<ManagerMode>('flow')
 
   const createManager = async (): Promise<void> => {
     if (!team) return
@@ -49,7 +51,13 @@ export function CommandCenter({
   return (
     <>
       {manager ? (
-        <ManagerPanel manager={manager} onEdit={() => onEditAgent(manager.id)} />
+        <ManagerPanel
+          manager={manager}
+          onEdit={() => onEditAgent(manager.id)}
+          mode={mode}
+          onMode={setMode}
+          onFocusAgent={(id) => setFocusId(id)}
+        />
       ) : (
         <main
           style={{

@@ -21,6 +21,8 @@ Yönetici ve alt ajanlardan oluşan ajan ekiplerini kurup çalıştırmak için 
 | "Blog → Video" ekip şablonu                                                                  | ✅    |
 | Yönetici merkezli ekran (solda yönetici, sağda ekibin okunur durumu), aydınlık/karanlık tema | ✅    |
 | Yöneticinin ekip önermesi (create_agents), onayla oluşturma                                  | ✅    |
+| Görevlerin Kanban görünümü (onay bekliyor / çalışıyor / tamamlandı / hata)                   | ✅    |
+| Ekip yeniden adlandırma ve silme                                                             | ✅    |
 
 ## Yönetici döngüsü
 

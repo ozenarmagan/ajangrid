@@ -8,6 +8,7 @@ import {
 } from '../../../shared/types'
 import { Stop } from '../components/Icons'
 import { useActiveTeam, useStore, useTeamAgents } from '../store'
+import { KanbanBoard } from './KanbanBoard'
 import { cleanError, engineLine, initialOf, timeOf } from '../util'
 
 const STATUS_TEXT: Record<string, { t: string; c: string; dot: string }> = {
@@ -212,10 +213,18 @@ function QuestionCard({ o }: { o: Orchestration }): React.JSX.Element | null {
   )
 }
 
+export type ManagerMode = 'flow' | 'kanban'
+
 export function ManagerPanel({
   manager,
-  onEdit
+  onEdit,
+  mode,
+  onMode,
+  onFocusAgent
 }: {
+  mode: ManagerMode
+  onMode: (m: ManagerMode) => void
+  onFocusAgent: (id: string) => void
   manager: Agent
   onEdit: () => void
 }): React.JSX.Element {
@@ -234,7 +243,7 @@ export function ManagerPanel({
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight })
-  }, [mine, outputTick])
+  }, [mine, outputTick, mode])
 
   const toggleCheckpoint = (id: string): void => {
     if (!team) return
@@ -298,6 +307,24 @@ export function ManagerPanel({
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <div className="seg-group" role="group" aria-label="Görünüm" style={{ padding: 3 }}>
+            <button
+              className={`seg ${mode === 'flow' ? 'on' : ''}`}
+              style={{ minHeight: 28, padding: '0 12px' }}
+              aria-pressed={mode === 'flow'}
+              onClick={() => onMode('flow')}
+            >
+              Akış
+            </button>
+            <button
+              className={`seg ${mode === 'kanban' ? 'on' : ''}`}
+              style={{ minHeight: 28, padding: '0 12px' }}
+              aria-pressed={mode === 'kanban'}
+              onClick={() => onMode('kanban')}
+            >
+              Kanban
+            </button>
+          </div>
           <span className="badge b-cli">{engineLine(manager, data)}</span>
           <span className="badge b-amber">
             Efor: {EFFORT_LABELS[manager.effort].toLocaleLowerCase('tr')}
@@ -316,69 +343,77 @@ export function ManagerPanel({
         </div>
       </header>
 
-      <div
-        ref={scroller}
-        className="scroll"
-        style={{ flex: 1, padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}
-      >
-        {!mine.length ? (
-          <div
-            className="muted"
-            style={{ margin: 'auto', textAlign: 'center', maxWidth: 460, lineHeight: 1.6 }}
-          >
-            {members.length
-              ? `Yöneticiye bir hedef ver. Hedefi adımlara böler, ${members.length} alt ajana dağıtır, çıktıları denetler ve işaretlediğin ajanlardan önce onayını ister.`
-              : 'Yöneticiye hedefini yaz. Ekipte uygun ajan yoksa önce bir ekip önerir; onaylarsan ajanlar oluşturulur ve iş başlar.'}
-          </div>
-        ) : null}
-        {mine.map((o) => {
-          const st = STATUS_TEXT[o.status]
-          return (
-            <section
-              key={o.id}
-              style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 8 }}
+      {mode === 'kanban' && team ? (
+        <KanbanBoard
+          teamId={team.id}
+          onFocusAgent={onFocusAgent}
+          onOpenFlow={() => onMode('flow')}
+        />
+      ) : (
+        <div
+          ref={scroller}
+          className="scroll"
+          style={{ flex: 1, padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}
+        >
+          {!mine.length ? (
+            <div
+              className="muted"
+              style={{ margin: 'auto', textAlign: 'center', maxWidth: 460, lineHeight: 1.6 }}
             >
-              <div className="bubble-user" style={{ alignSelf: 'flex-end', maxWidth: '78%' }}>
-                {o.goal}
-              </div>
-              <div className="hint">
-                {timeOf(o.startedAt)} · <span style={{ color: st.c }}>{st.t}</span>
-                {o.checkpoints.length
-                  ? ` · onay noktaları: ${o.checkpoints
-                      .map((id) => agents.find((a) => a.id === id)?.name)
-                      .filter(Boolean)
-                      .join(', ')}`
-                  : ''}
-              </div>
-              {o.steps.map((s) => (
-                <Step key={s.id} s={s} agents={agents} />
-              ))}
-              {o.status === 'waiting' ? <QuestionCard key={o.question?.id} o={o} /> : null}
-              {o.status === 'done' && o.summary ? (
-                <div
-                  style={{
-                    border: '1px solid rgba(139,92,246,.4)',
-                    background: 'rgba(124,58,237,.08)',
-                    borderRadius: 14,
-                    padding: '12px 14px',
-                    maxWidth: '88%'
-                  }}
-                >
-                  <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--violet-fg)' }}>
-                    Sonuç
+              {members.length
+                ? `Yöneticiye bir hedef ver. Hedefi adımlara böler, ${members.length} alt ajana dağıtır, çıktıları denetler ve işaretlediğin ajanlardan önce onayını ister.`
+                : 'Yöneticiye hedefini yaz. Ekipte uygun ajan yoksa önce bir ekip önerir; onaylarsan ajanlar oluşturulur ve iş başlar.'}
+            </div>
+          ) : null}
+          {mine.map((o) => {
+            const st = STATUS_TEXT[o.status]
+            return (
+              <section
+                key={o.id}
+                style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 8 }}
+              >
+                <div className="bubble-user" style={{ alignSelf: 'flex-end', maxWidth: '78%' }}>
+                  {o.goal}
+                </div>
+                <div className="hint">
+                  {timeOf(o.startedAt)} · <span style={{ color: st.c }}>{st.t}</span>
+                  {o.checkpoints.length
+                    ? ` · onay noktaları: ${o.checkpoints
+                        .map((id) => agents.find((a) => a.id === id)?.name)
+                        .filter(Boolean)
+                        .join(', ')}`
+                    : ''}
+                </div>
+                {o.steps.map((s) => (
+                  <Step key={s.id} s={s} agents={agents} />
+                ))}
+                {o.status === 'waiting' ? <QuestionCard key={o.question?.id} o={o} /> : null}
+                {o.status === 'done' && o.summary ? (
+                  <div
+                    style={{
+                      border: '1px solid rgba(139,92,246,.4)',
+                      background: 'rgba(124,58,237,.08)',
+                      borderRadius: 14,
+                      padding: '12px 14px',
+                      maxWidth: '88%'
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--violet-fg)' }}>
+                      Sonuç
+                    </div>
+                    <div className="pre">{o.summary}</div>
                   </div>
-                  <div className="pre">{o.summary}</div>
-                </div>
-              ) : null}
-              {o.status === 'error' || (o.status === 'stopped' && o.error) ? (
-                <div className="hint" style={{ color: 'var(--red-fg)' }}>
-                  {o.error}
-                </div>
-              ) : null}
-            </section>
-          )
-        })}
-      </div>
+                ) : null}
+                {o.status === 'error' || (o.status === 'stopped' && o.error) ? (
+                  <div className="hint" style={{ color: 'var(--red-fg)' }}>
+                    {o.error}
+                  </div>
+                ) : null}
+              </section>
+            )
+          })}
+        </div>
+      )}
 
       <div style={{ padding: '12px 22px 18px' }}>
         <div

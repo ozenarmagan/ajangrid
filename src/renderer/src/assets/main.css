@@ -433,3 +433,16 @@ table.tbl td {
   padding: 0;
   align-self: flex-start;
 }
+
+.team-row .team-act {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.team-row:hover .team-act,
+.team-row:focus-within .team-act {
+  opacity: 1;
+}
+.ib:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
