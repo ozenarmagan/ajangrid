@@ -4,12 +4,13 @@ import { useActiveTeam, useStore, useTeamAgents } from '../store'
 import { agentState, cleanError, engineLine, initialOf } from '../util'
 import { Download, Logo, Moon, Pencil, Plus, Sun, Trash } from './Icons'
 
-export type View = 'command' | 'agents' | 'engines'
+export type View = 'command' | 'agents' | 'engines' | 'help'
 
 const NAV: Array<{ id: View; label: string }> = [
   { id: 'command', label: 'Komuta Merkezi' },
   { id: 'agents', label: 'Ajanlar' },
-  { id: 'engines', label: 'Motorlar ve Limitler' }
+  { id: 'engines', label: 'Motorlar ve Limitler' },
+  { id: 'help', label: 'Kullanım Kılavuzu' }
 ]
 
 interface Props {

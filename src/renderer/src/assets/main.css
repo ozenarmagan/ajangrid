@@ -446,3 +446,86 @@ table.tbl td {
   opacity: 0.35;
   cursor: default;
 }
+
+/* Kullanım kılavuzu */
+.doc {
+  line-height: 1.7;
+  font-size: 14.5px;
+  color: var(--text2);
+}
+.doc h1 {
+  font-size: 28px;
+  margin: 0 0 14px;
+  color: var(--text-hi);
+}
+.doc h2 {
+  font-size: 21px;
+  margin: 34px 0 10px;
+  color: var(--text-hi);
+  scroll-margin-top: 16px;
+}
+.doc h3 {
+  font-size: 16px;
+  margin: 24px 0 6px;
+  color: var(--text);
+}
+.doc p {
+  margin: 10px 0;
+}
+.doc ul,
+.doc ol {
+  margin: 8px 0;
+  padding-left: 22px;
+}
+.doc li {
+  margin: 4px 0;
+}
+.doc pre {
+  background: var(--term);
+  border: 1px solid var(--w08);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text2);
+}
+.doc blockquote {
+  margin: 12px 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(124, 58, 237, 0.08);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+.doc table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 10px 0;
+  font-size: 13.5px;
+}
+.doc th,
+.doc td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--w08);
+  vertical-align: top;
+}
+.doc th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 12.5px;
+}
+.doc hr {
+  border: 0;
+  border-top: 1px solid var(--w08);
+  margin: 28px 0;
+}
+.doc strong {
+  color: var(--text);
+}
+.doc ul {
+  list-style: disc;
+}
+.doc ol {
+  list-style: decimal;
+}

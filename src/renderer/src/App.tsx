@@ -4,6 +4,7 @@ import { StoreProvider, useStore, useTeamAgents } from './store'
 import { CommandCenter } from './views/CommandCenter'
 import { AgentEditor } from './views/AgentEditor'
 import { EnginesView } from './views/EnginesView'
+import { HelpView } from './views/HelpView'
 
 function Shell(): React.JSX.Element {
   const { data, error, setError, startRun } = useStore()
@@ -32,7 +33,7 @@ function Shell(): React.JSX.Element {
   // (Ajanlar ekranındaysa o ajanı düzenle)
   const selectAgent = (id: string): void => {
     setSelected(id)
-    if (view === 'engines') setView('command')
+    if (view === 'engines' || view === 'help') setView('command')
   }
   const focusId = agents.find((a) => a.id === current && !a.isManager)?.id ?? null
 
@@ -77,6 +78,7 @@ function Shell(): React.JSX.Element {
           />
         ) : null}
         {view === 'engines' ? <EnginesView /> : null}
+        {view === 'help' ? <HelpView /> : null}
 
         {error ? (
           <div

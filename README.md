@@ -76,6 +76,8 @@ CLI'lar abonelik limitlerinin yüzdesini dışarıya güvenilir şekilde vermiyo
 
 Limit algılandığında ajanın ayarına göre üç seçenek vardır: aynı rol ve görevle API yedeğine geçmek, belirli bir süre bekleyip tekrar denemek ya da sana sormak.
 
+> **Kullanım kılavuzu:** [docs/KULLANIM.md](docs/KULLANIM.md). Aynı kılavuz uygulamada sol menüdeki **Kullanım Kılavuzu** bölümünde de var.
+
 ## Kurulum (çift tıkla)
 
 [Releases](../../releases) sayfasından işletim sistemine uygun dosyayı indir:
