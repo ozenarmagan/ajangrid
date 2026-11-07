@@ -54,6 +54,12 @@ else
 fi
 
 export CSC_NAME="${KIMLIK#*: }"
+# Varsayılan: yalnızca bu Mac'in mimarisi (derleme yarı sürede biter).
+# Intel Mac'ler için de üretmek istersen: TUM_MIMARILER=1 ./mac-imzali-derle.command
+if [ "${TUM_MIMARILER:-0}" != "1" ]; then
+  if [ "$(uname -m)" = "arm64" ]; then EK+=(-c.mac.target=dmg --arm64); else EK+=(-c.mac.target=dmg --x64); fi
+  echo "→ Mimari: $(uname -m) (Intel için de üretmek: TUM_MIMARILER=1)"
+fi
 echo "→ Paketler kuruluyor…"
 npm install --no-audit --no-fund || { bekle; exit 1; }
 echo "→ Derleniyor ve imzalanıyor (notarization birkaç dakika sürebilir)…"
