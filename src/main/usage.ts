@@ -131,7 +131,7 @@ export function summary(settings: Settings): UsageSummary {
 /** CLI çıktısında abonelik/oran limiti mesajı var mı? */
 export function looksLikeLimit(output: string): boolean {
   const tail = output.slice(-3000)
-  return /usage limit|rate[ -]?limit|limit (has been )?reached|reached your .*limit|quota (exceeded|exhausted)|exceeded your|too many requests|\b429\b|limit will reset|resets? at \d|out of credits|insufficient (credits|quota)/i.test(
+  return /usage limit|rate[ -]?limit|limit (has been )?reached|reached your .*limit|quota (exceeded|exhausted)|exceeded your|too many requests|\b429\b|limit will reset|resets? at \d|out of credits|insufficient (credits|quota)|hit your .{0,30}limit|\d+-hour limit|weekly limit|limit\W{0,5}resets?/i.test(
     tail
   )
 }

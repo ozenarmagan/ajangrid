@@ -465,17 +465,24 @@ export class Orchestrator {
         .map((id) => data.agents.find((a) => a.id === id)?.name)
         .filter(Boolean)
         .join(', ')
-    const history = o.steps
-      .filter((s) => s.kind !== 'manager' || s.text)
+    const shown = o.steps.filter((s) => s.kind !== 'manager' || s.text)
+    // Uzun hedeflerde komut istemi şişmesin: son adımlar tam, eskiler kısaltılmış
+    const FULL = 12
+    const clip = (t: string | undefined, i: number): string => {
+      const x = t ?? ''
+      if (i >= shown.length - FULL || x.length <= 400) return x
+      return x.slice(0, 400) + ' … (kısaltıldı)'
+    }
+    const history = shown
       .map((s, i) => {
         const n = i + 1
         if (s.kind === 'task') {
           const ag = data.agents.find((a) => a.id === s.agentId)?.name ?? '?'
-          return `${n}. [Görev → ${ag}] ${s.task}\n   Durum: ${s.status ?? '?'}\n   Çıktı:\n${(s.text ?? '').replace(/^/gm, '   | ')}`
+          return `${n}. [Görev → ${ag}] ${clip(s.task, i)}\n   Durum: ${s.status ?? '?'}\n   Çıktı:\n${clip(s.text, i).replace(/^/gm, '   | ')}`
         }
         if (s.kind === 'user') return `${n}. [Kullanıcı] ${s.text}`
-        if (s.kind === 'note') return `${n}. [Sistem] ${s.text}`
-        return `${n}. [Senin önceki değerlendirmen] ${s.text}`
+        if (s.kind === 'note') return `${n}. [Sistem] ${clip(s.text, i)}`
+        return `${n}. [Senin önceki değerlendirmen] ${clip(s.text, i)}`
       })
       .join('\n\n')
     const files = listFiles(o.workdir)
@@ -512,7 +519,7 @@ export class Orchestrator {
       '{"action":"assign_parallel","assignments":[{"agent":"<ad>","task":"<görev>"}]}   ← yalnızca birbirinden bağımsız işler için',
       '{"action":"ask_user","question":"<kullanıcıya soru>"}   ← yalnızca gerçekten gerekliyse',
       '{"action":"create_agents","agents":[{"name":"<kısa ad>","title":"<ne yapar, tek cümle>","role":"<ayrıntılı talimat>","engine":"cli|api|local","cli":"claude|codex|antigravity","apiProvider":"anthropic|openai|google|openrouter","localTool":"<yerel araç adı>","model":"<model>","effort":"low|medium|high|xhigh|max","permissions":{"write":true,"shell":false,"network":false}}]}',
-      '   ← havuzda bu iş için uygun ajan yoksa; kullanıcı onaylayınca oluşturulur. Gereken en az izni ver, ağır işler dışında düşük/orta efor seç.',
+      '   ← havuzda bu iş için uygun ajan yoksa (yalnızca YENİ ajan ekler, var olanı değiştiremez); kullanıcı onaylayınca oluşturulur. Gereken en az izni ver, ağır işler dışında düşük/orta efor seç.',
       '{"action":"finish","summary":"<kullanıcıya sonuç özeti; üretilen dosyaları belirt>"}',
       correction ? `\nÖNEMLİ: ${correction}` : ''
     ]
@@ -565,14 +572,26 @@ export class Orchestrator {
       if (!this.alive(o)) return
       step.status = done.status
       if (done.status !== 'done') {
+        // Çıktının son anlamlı satırları: hatanın asıl nedeni genelde oradadır
+        const last = this.runs
+          .output(run.id)
+          .split('\n')
+          .map((l) => l.trim())
+          .filter((l) => l && !/^\[çıkış kodu/.test(l))
+          .slice(-3)
+          .join(' · ')
+          .slice(-400)
         if (done.limitHit) {
           step.text = 'Yöneticinin abonelik limiti doldu.'
           return this.ask(o, {
             kind: 'limit',
-            text: `Yönetici (${manager.name}) abonelik limitine takıldı. Limit yenilenince "Devam et" de ya da yöneticinin motorunu değiştirip devam et.`
+            text: `Yönetici (${manager.name}) abonelik limitine takıldı.${last ? `\nCLI mesajı: ${last}` : ''}\nLimit yenilenince "Devam et" de ya da yöneticinin motorunu değiştirip devam et.`
           })
         }
-        return this.fail(o, `Yönetici çalışması başarısız: ${done.error ?? done.status}`)
+        return this.fail(
+          o,
+          `Yönetici çalışması başarısız (${done.error ?? done.status}).${last ? ` Son çıktı: ${last}` : ''}`
+        )
       }
       const out = this.runs.output(run.id)
       const action = extractAction(out)
@@ -611,10 +630,23 @@ export class Orchestrator {
         const eng: EngineInfo = { clis: await detectClis().catch(() => []), keys: apiKeyStatuses() }
         const proposals = this.normalizeProposals(data, action.agents ?? [], eng)
         if (!proposals.length) {
-          this.addStep(o, { kind: 'note', text: 'Ajan önerisi boş ya da geçersizdi.' })
+          const taken = (action.agents ?? [])
+            .map((a) => a?.name?.trim())
+            .filter(
+              (n): n is string =>
+                Boolean(n) &&
+                data.agents.some(
+                  (x) => x.name.toLocaleLowerCase('tr') === n!.toLocaleLowerCase('tr')
+                )
+            )
+          const why = taken.length
+            ? `"${taken.join('", "')}" adında ajan zaten var. create_agents yalnızca yeni ajan ekler; var olan ajanın motorunu, modelini ya da rolünü değiştiremez.`
+            : 'Liste boştu ya da ajanlarda name, engine, role eksikti.'
+          this.addStep(o, { kind: 'note', text: `Ajan önerisi geçersiz: ${why}` })
           this.emit(o)
-          correction =
-            'create_agents listesi boş ya da geçersizdi. Her ajan için en az name, engine ve role ver.'
+          correction = taken.length
+            ? `${why} Var olan bir ajanın ayarı değişmeli ise ask_user ile kullanıcıdan bunu Ajanlar ekranında yapmasını iste. Yeni bir ajan gerekiyorsa farklı bir ad kullan.`
+            : 'create_agents listesi boş ya da geçersizdi. Her ajan için en az name, engine ve role ver.'
           continue
         }
         return this.ask(o, {
